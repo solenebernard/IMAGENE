@@ -1,0 +1,44 @@
+local_solene:
+  # rootpath: "/Users/solene/Documents/"
+  rootpath: '/Volumes/projects/pbi_helix/'
+  rootpath_atlas: "/Volumes/PBI_big_data/rna-imaging/data/gariboldi_t-cell-fate/"
+  model_path:  "/Users/solene/Documents/Github/sam2/checkpoints/sam2.1_hiera_large.pt"
+  num_workers: 0
+  device: "cpu"
+  
+local_solene_perso:
+  # rootpath: "/Users/solene/Documents/Pasteur/"
+  rootpath: "/Volumes/projects/pbi_helix/"
+  rootpath_atlas: "/Volumes/PBI_big_data/rna-imaging/data/gariboldi_t-cell-fate/"
+  model_path:  "/Users/solene/Documents/Github/sam2/checkpoints/sam2.1_hiera_large.pt"
+  num_workers: 1
+  device: "cpu"
+
+cluster:
+  rootpath: "/pasteur/helix/projects/pbi_helix/"  
+  model_path:  "/pasteur/helix/projects/pbi_helix/sam2/checkpoints/sam2.1_hiera_large.pt"
+  num_workers: 96
+  device: "cuda"
+  
+
+constants:
+  scale: 40/63 # the scaling factor between BF and FISH microscopy
+  max_dist: 60 # The maximum distance between two cells for the matching of BF and FISH
+  size_radius: 60 # The radius for computing the video of individual cells
+  backward: True # If the segmentation is done for the last frame: propagate with SAM2 backwardly
+  
+experiment:
+  exp_path: '2025-10-13_Olga6/'
+  condition: '1-NA'
+  # condition: '2-MIX'
+  # condition: '3-24H'
+  # condition: '4-24H'
+  # genes: [None, None, None, None, "CORO1A", "TNF", None, None, None, None, None, None, None, None, "IFNG", "GZMB"] # christian1
+  # genes: ["TNF", "CORO1A", "IL2RA", "ACTB", "CD69", "IRF8", "GZMB", "CCR7", "IFNG", "GBP4", "TNF_2", "XP01"] # Olga1
+  # genes: [ "CORO1A", "TNF", "ACTB", "IL2RA", "IRF8", "CD69", "CCR7", "GZMB", "GBP4", "IFNG", "TNF", "XP01", "CD8"] # Olga2
+  # genes: [ "CORO1A", "TNF", "ACTB", "IL2RA", "IRF8", "CD69", "CCR7", "GZMB", "GBP4", "IFNG", "CD8", "XP01", "CORO1A_2", "TNF_2"] # Olga3
+  # genes: [ "CDC42", "CD8", "TCF7", "ID2"] # hiv1
+  # genes: [ "CDC42", "CD8", "TCF7", "ID2", "GZMK", "VHL", "TNFSF10", "FASLG", "TNF", "IL7R", "MIF", "CCR7", "IFNG", "GZMB", "CD69", "CD8_2"] # hiv2
+  genes: ["GZMB", "TNF", "CD69","IFNG",  "CCR7", "CD8", "GBP4", "IL2RA",  "XP01", "IRF8",  "ACTB", "CORO1A",  "SDch0", "SDch1", "GZMB_2", "TNF_2"] # olga5 & olga6 
+  rounds: [0,1,2,3,4,5,6,7]
+  n_features_dim: 100
