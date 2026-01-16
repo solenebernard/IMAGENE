@@ -1,6 +1,6 @@
 # IMAGENE
 
-<video src="IMAGENE_illustration.m4v" width="320" height="240" controls></video>
+[▶ Watch demo](demo.m4v)
 
 In the following, there are three main variables for data storage
 - `ROOTPATH` – main dataset directory (depends on where the data is stored).
