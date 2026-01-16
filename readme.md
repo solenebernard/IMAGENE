@@ -51,7 +51,7 @@ Here the architecture of the files
 In the case where images were exported unmerged, save the images in  `{ROOTPATH}/{EXP_PATH}/Live/{CONDITION}/non_merged/`
 Then run `stitch_blend.py`. Save the merged images in `{ROOTPATH}/{EXP_PATH}/Live/{CONDITION}/`.
 
-## Manual steps
+#### Manual steps
 Run pretrained cpam cellpose model to segment last frame of the whole BF FOV (merged one) (or first but we recommand last) and do manual correcting of the mask.
 If last: set BACKWARD to True, else False.
 The segmentation of cellpose can be achieved via (by replacing the good image_path):
@@ -82,7 +82,7 @@ Run `create_live_dataset.py`. From the segmented cells obtained before, create i
 Run `fish_mip.py`. Computes the Maximum Intensity Projection (MIP) of each tile depending on rounds selected in array t_rounds (overlayed of all gene expressed). Used later for segmentation. Saved in `{ROOTPATH}/{EXP_PATH}/Fish/mip/`.
 Saves FISH signal in first channel and DAPI in second channel.
 
-## Manual steps
+#### Manual steps
 Choose thresholds for spots detection for each condition and each gene.
 Saves as a dictionnary in `{ROOTPATH}/{EXP_PATH}/Fish/bigfish/{CONDITION}/CONDITION_thresh_BIGFISH.npy`
 Segment from the MIP of individual tile. Save the masks in `{ROOTPATH}/{EXP_PATH}/Fish/masks/{CONDITION}/*.png`
@@ -106,13 +106,10 @@ Saved in `{ROOTPATH}/{EXP_PATH}/alignment/{CONDITION}-alignment.csv`
 # 4 - Extract features
 Manually extract features
 
-## 4.1 Texture features
-Run `sobel_filer.py`. Save in `{ROOTPATH}/{EXP_PATH}/Live/live_cell_features/texture_{CONDITION}.csv`.
-
-## 4.2 Fourier Features
+## 4.1 Fourier Features
 Run `hand_features_fourier.py`. Save in `{ROOTPATH}/{EXP_PATH}/Live/live_cell_features/fourier_features_{CONDITION}.csv`.
 
-## 4.3 Cell Features with scikit-image
+## 4.2 Cell Features with scikit-image
 Run `cell_feats_scikit.py`. Save in `{ROOTPATH}/{EXP_PATH}/Live/live_cell_features/cell_feats_scikit_{CONDITION}.csv`.
 
 # 5 - Learning
