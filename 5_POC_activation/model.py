@@ -505,7 +505,7 @@ for ax in axes[-3:]:
 # axes[0].legend()
 # fig.suptitle("Performance metrics per gene", fontsize=14)
 plt.tight_layout()
-plt.savefig('.6_results/performance.png', format='png', dpi=300)
+plt.savefig('6_results/performance.png', format='png', dpi=300)
 plt.show()
 
 
