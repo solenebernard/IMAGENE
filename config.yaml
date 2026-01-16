@@ -19,7 +19,7 @@ constants:
   backward: True # If the segmentation is done for the last frame: propagate with SAM2 backwardly
   
 experiment:
-  exp_path: '2025-10-13_Olga6/'
+  exp_path: '2025-10-13_exp/'
   condition: '1-NA' # or 2-MIX, 3-24H, 4-24H
   genes: ["GZMB", "TNF", "CD69","IFNG",  "CCR7", "CD8", "GBP4", "IL2RA",  "XP01", "IRF8",  "ACTB", "CORO1A"] 
   rounds: [0,1,2,3,4,5]
