@@ -8,6 +8,7 @@ Do check for each cell id for each masks:
     - if the area of the cell is larger than 500 pixels
 '''
 
+
 # Import local tools
 from tools.read_yaml import *
 from tools.imports import *

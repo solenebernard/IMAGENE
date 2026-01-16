@@ -111,7 +111,6 @@ def compute_metrics_trajectory_fourier(traj):
         }
 
 
-
 def reduce_features_fourier(df_fourier, order=10):
     list_feats = [get_features_efd(df_fourier, o) for o in range(order)]
     df_magnitude = pd.DataFrame({f'magnitude_{i}':x[0] for i,x in enumerate(list_feats)})
@@ -154,46 +153,14 @@ def reduce_features_cell(df_cell):
     
     
 
-def reduce_features_nucleus(df_nucleus):
-    df_nucleus['ratio_area_nucleus_cell'] = df_nucleus['area_nucleus']/df_nucleus['area_cell']
-    df_nucleus['ratio_bbox_area_nucleus_cell'] = df_nucleus['bbox_area_nucleus']/df_nucleus['bbox_area_cell']
-    df_nucleus = df_nucleus.drop(columns=['area_cell',  'centroid-0_cell', 'centroid-1_cell', \
-        'centroid-0_nucleus', 'centroid-1_nucleus'])
-    # Ignore zeros (it might means the nucleus segmentation is missing)
-    df_clean = df_nucleus.replace(0, np.nan)
-    df_group = df_clean.groupby('cell_bf')
-    new_df = df_group.aggregate(['mean', 'std', 'max', 'min'])
-    new_df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in new_df.columns]
-    return(new_df)
-
-
 def reduce_neighbors(df_neigh):
     df_group = df_neigh.groupby('cell_bf')
     new_df = df_group.aggregate(['mean', 'std', 'max', 'min'])
     new_df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in new_df.columns]
-    return(new_df)
+    return(new_df)     
 
-
-def reduce_features_lamellipodia(df_lamellipodia):
-    df_lamellipodia = df_lamellipodia.drop(columns=['area_cell',  'centroid-0_cell', 'centroid-1_cell', \
-        'centroid-0_inner', 'centroid-1_inner', 'centroid-0_outer', 'centroid-1_outer'])
-    df_lamellipodia = df_lamellipodia.droplevel('t')
-    return(df_lamellipodia)
-
-                                
-# list_exp_path, list_condition = ['2025-10-13_Olga6/'], \
-#                                 [['1-NA', '2-MIX', '3-24H', '4-24H']]
-                                
-
-list_exp_path, list_condition = ["2025-03-04_Proof-of-concept-Olga/" , \
-                            '2025-03-31_Proof-of-concept-Olga2/', \
-                            "2025-04-13_Proof-of-concept-Olga3/", \
-                            '2025-10-13_Olga6/'], \
-                            [['1-NA', '2-4H-Mael', '3-4H-Nico', '4-24H-Nico'], \
-                            ['1-NA', '2-4H', '3-24H', '4-MIX'], \
-                            ['1-NA', '2-4H', '3-24H', '4-MIX'], \
-                            ['1-NA', '2-MIX', '3-24H', '4-24H']]
-        
+list_exp_path, list_condition = ['2025-10-13_Olga6/'], \
+                            [['1-NA', '2-MIX', '3-24H', '4-24H']]
 filter_error = True
 
 all_features = pd.DataFrame()
@@ -205,11 +172,6 @@ for exp_path, l_cond in zip(list_exp_path, list_condition):
         all_feats_mean = pd.DataFrame()
         gene_expr = pd.read_csv(ROOTPATH + exp_path + 'Fish/' + condition + '.csv', index_col='Key')
         alignment = pd.read_csv(ROOTPATH + exp_path + 'alignment/' + condition + '-alignment.csv', index_col='BF')
-
-        # TEXTURE
-        texture = pd.read_csv(ROOTPATH + exp_path + 'live_cell_features/texture_'+condition+'.csv', index_col=['cell_bf', 't', 'z'])
-        all_feats_mean = texture.groupby(['cell_bf', 'z']).agg('mean').unstack(level='z')
-        all_feats_mean.columns = [f"{col[0]}_z{col[1]}" for col in all_feats_mean.columns]
 
         # CONTOUR
         order = 10

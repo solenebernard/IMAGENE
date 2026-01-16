@@ -28,11 +28,11 @@ from sklearn.model_selection import StratifiedKFold
 df = pd.read_csv('6_results/dataset.csv', index_col=['exp_path', 'condition', 'cell_bf'])
 df = df.loc[('2025-10-13_Olga6/', slice(None), slice(None))]
 
-list_gene = ['GZMB', 'CD69', 'CCR7', 'GBP4', 'ACTB', 'CORO1A'] # Genes of high quality in olga6
+list_gene = GENES  
 
 ##### FILTER DATA
 # Bool
-distance_tresh, distance_2nd_tresh = 60,80
+distance_tresh, distance_2nd_tresh = 100,50
 # Filter on distance
 distance = df['Distance']<distance_tresh
 distance_2nd = (df['Distance_2nd_bf_to_fish']>distance_2nd_tresh)&\
@@ -53,21 +53,21 @@ for col in list_gene:
 columns_gene = [c for c in df.columns \
                 if c.startswith(('Gene_', 'delta_z_', 'Fish', \
                     'Distance', 'Id_2nd', 'is_on_edge', 'count', 'BF_center_', 'traj_', 'centroid-'))]
-
 select_features = [x for x in df.columns if x not in columns_gene]
 
 # OLGA6 
-dict_thresholds = {'CORO1A': 40,
-                'TNF': 3,
+dict_thresholds = {'CORO1A': 30,
+                'TNF': 5,
                 'GZMB': 11,
-                'ACTB': 100,
-                'CD69': 10,
-                'IRF8': 5,
+                'ACTB': 50,
+                'CD69': 4,
+                'IRF8': 4,
                 'CCR7': 30,
-                'GBP4': 4,
+                'GBP4': 5,
                 'XP01': 5,
                 'IFNG': 3,
-                'IL2RA': 3}
+                'IL2RA': 5,
+                'CD8':2}
 
 # Correlation between genes?
 
@@ -94,6 +94,7 @@ for gene1 in list_gene:
 flat_pvals = pval_mat.values.flatten()
 _, qvals, _, _ = multipletests(flat_pvals, method="fdr_bh")
 qval_mat = pd.DataFrame(qvals.reshape(pval_mat.shape), index=pval_mat.index, columns=pval_mat.columns)
+
 
 # Mask nonsignificant correlations (e.g., q > 0.05)
 corr_mat = corr_mat.mask(qval_mat.abs() > 0.05)
@@ -122,8 +123,9 @@ g.ax_heatmap.set_yticks(np.arange(len(reordered.index)) + 0.5)
 g.ax_heatmap.set_xticklabels(reordered.columns, rotation=90, fontsize=6)
 g.ax_heatmap.set_yticklabels(reordered.index, rotation=0, fontsize=6)
 
-###### FEATURE DIMENSION REDUCTION : SELECTION OF CORRELATED FEATURES
 
+
+###### FEATURE DIMENSION REDUCTION : SELECTION OF CORRELATED FEATURES
 
 # Initialize correlation & pval matrices
 corr_mat = pd.DataFrame(index=select_features, columns=list_gene, dtype=float)
@@ -185,16 +187,15 @@ g.ax_heatmap.set_yticklabels(reordered.index, rotation=0, fontsize=6)
 
 
 
-
-
 ###### MODEL
-
-best_params = {'n_estimators': 100,
- 'min_samples_split': 10,
- 'min_samples_leaf': 4,
- 'max_features': 'sqrt',
- 'max_depth': 5,
- 'bootstrap': False}
+param_dist = {
+    'n_estimators': [100, 300, 500],
+    'max_depth': [None, 5, 10, 20],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt', 'log2', None],
+    'bootstrap': [True, False]
+}
 
 scorer = make_scorer(balanced_accuracy_score)
 
@@ -205,14 +206,14 @@ for i,gene in enumerate(list_gene):
 
     gene_tresh = dict_thresholds[gene]
     
-
+    # Prepare data
     X = df[select_features].dropna(axis=1, how='any')
     X = (X - X.mean()) / X.std()
     y = df.loc[X.index, f'Gene_{gene}']
     
     # Filter NAN gene and binary target
     gene_isna = y.isna()
-    y_bin = (y[gene_isna==False]>gene_tresh).astype(int)
+    y_bin = (y[gene_isna==False]>=gene_tresh).astype(int)
     X = X.loc[y_bin.index]
     
     if (len(X)>10)&(len(np.unique(y_bin))==2):
@@ -220,7 +221,7 @@ for i,gene in enumerate(list_gene):
         # Stratified K-Fold setup
         n_splits = 5
         skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-      
+        
         class_weights = [1.0, np.sum(y_bin == 0)/np.sum(y_bin == 1)]
         
         rf_model = RandomForestClassifier(
@@ -228,9 +229,21 @@ for i,gene in enumerate(list_gene):
             n_jobs=-1
         )
 
-            
-        # K FOLDS
+        search = RandomizedSearchCV(
+            estimator=rf_model,
+            param_distributions=param_dist,
+            scoring=scorer,   # balanced accuracy
+            n_iter=30,        # number of random combinations
+            cv=skf,
+            verbose=1,
+            n_jobs=-1,
+            random_state=42
+        )
+        
+        search.fit(X, y_bin)
+        best_params = search.best_params_
 
+        # K FOLDS
         metrics = []
 
         for fold, (train_idx, test_idx) in enumerate(skf.split(X, y_bin), 1):
@@ -239,7 +252,7 @@ for i,gene in enumerate(list_gene):
             # Use .iloc to subset by row positions
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
-        
+            
             model = RandomForestClassifier(class_weight='balanced', **best_params)
             
             # Train model
@@ -308,6 +321,8 @@ results_avg['Percentage_Negative_test'] = results_avg['nN_test']/(results_avg['n
 results_avg['Percentage_Positive_test'] = results_avg['nP_test']/(results_avg['nN_test']+results_avg['nP_test'])
 metrics = ['Percentage_Positive', 'Percentage_Negative', 'TPR', 'TNR', 'balanced_accuracy']
 n_metrics = len(metrics)
+
+
 n_genes = results_avg.shape[0]
 fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 5), sharey=True)
 if n_metrics == 1:
@@ -345,15 +360,15 @@ for ax, metric in zip(axes, metrics):
 axes[0].legend()
 fig.suptitle("Performance metrics per gene", fontsize=14)
 plt.tight_layout()
-plt.savefig('6_results/performance.png')
 plt.show()
+
+
 
 result_importance_avg = result_importance.set_index(['gene', 'feature', 'fold']).groupby(['gene', 'feature']).agg('mean')
 result_importance_avg
 
 
 df_heat = result_importance_avg.unstack('feature')['importance']  # pivot so features are columns
-# df_heat = df_heat.loc[['ACTB', 'CORO1A', 'GZMB', 'IL2RA', 'XP01']]
 df_heat = df_heat.loc[:,df_heat.abs().max(axis=0)>0.01]
 
 g = sns.clustermap(
@@ -366,6 +381,7 @@ g = sns.clustermap(
     row_cluster=True,
     figsize=(10, 10)
 )
+
 row_order = g.dendrogram_row.reordered_ind
 col_order = g.dendrogram_col.reordered_ind
 
@@ -377,4 +393,21 @@ g.ax_heatmap.set_yticks(np.arange(len(reordered.columns)) + 0.5)
 g.ax_heatmap.set_xticks(np.arange(len(reordered.index)) + 0.5)
 g.ax_heatmap.set_yticklabels(reordered.columns, rotation=0, fontsize=6)
 g.ax_heatmap.set_xticklabels(reordered.index, rotation=90, fontsize=6)
+
+
+g = sns.clustermap(
+    df_heat.T,
+    cmap="coolwarm", center=0,
+    cbar_kws={'label': 'Spearman correlation'},
+    linewidths=0.5,
+    linecolor="lightgray",
+    col_cluster=False,
+    row_cluster=False,
+    figsize=(10, 10)
+)
+ax = g.ax_heatmap
+ax.set_yticks(range(len(df_heat.T.index)))
+ax.set_yticklabels(df_heat.T.index, fontsize=8)
+plt.setp(ax.get_yticklabels(), rotation=0)  
+plt.show()
 
