@@ -63,30 +63,14 @@ def voronoi_finite_polygons(vor, labels, bbox):
         # plt.show()
     return polygons_dict
 
-def create_df(list_masks):
-    # Generate the centroids of cells
-    props_all = []
-    for t in range(n_t):
-        props_cells = regionprops_table(
-            list_masks[t],
-            properties=('label', 'area', 'centroid')
-        )
-        df_cells = pd.DataFrame(props_cells)
-        df_cells['t'] = t
-        props_all.append(df_cells)
-    df_cells_all = pd.concat([c for c in props_all])
-    df_cells_all = df_cells_all.rename(columns={'label':'cell_bf'})
-    df_cells_all = df_cells_all.set_index(['cell_bf', 't'])
-    return(df_cells_all)
-
 def create_df_traj(df_cells_all):
     # Generate metrics for dynamics
     unique_id = np.unique(np.asarray([x[0] for x in df_cells_all.index]))
     dict_traj = {}
     for id_cell in unique_id:
         traj = np.asarray(df_cells_all.loc[id_cell,['centroid-0', 'centroid-1']])
-        if len(traj)>15:
-            tau, msd = TMSD_curve(traj, nmax=15) 
+        if len(traj)>MSD_N_MAX:
+            tau, msd = TMSD_curve(traj, nmax=MSD_N_MAX) 
             # Fit log-log MSD
             log_tau, log_msd = np.log10(tau), np.log10(msd)
             slope, std_err = fit_powerlaw(log_tau, log_msd)
@@ -105,7 +89,7 @@ def create_df_vor_area(df_cells_all):
     # For each t frame
     for t in range(n_t):
         points = df_cells_all.loc[:, t, :]
-        points = points[points['area']>500] # filter the error
+        points = points[points['area']>MIN_CELL_AREA] # filter the error
         vor = Voronoi(points[['centroid-0','centroid-1']])
         list_bf_id = np.asarray(points.index)
         # compute voronoi area
@@ -126,7 +110,7 @@ def create_df_k_neighbors(df_cells_all):
         df = pd.DataFrame([], index=points.index)
         pi = points[['centroid-0', 'centroid-1']]
         d = distance.cdist(pi, pi)
-        list_thresh = [50,100,150,200,250]
+        list_thresh = NEIGHBORS_THRESHOLDS
         for thresh in list_thresh:
             n_d = np.array([np.sum(x<thresh)-1 for x in d]) # count number of neighbors closer than threshold
             df[f'n_neigh_thresh_{thresh}'] = n_d
@@ -136,11 +120,13 @@ def create_df_k_neighbors(df_cells_all):
     return(df_all)
 
 
-list_masks = load_masks(ROOTPATH, EXP_PATH, CONDITION, clean=False, t_max=21)
-n_t = len(list_masks)
-bbox = [0, list_masks.shape[1], list_masks.shape[2], 0]
+# Centroid and area of each tracked cell at each time frame, from the table of the tracks (step 1.3)
+tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
+df_cells_all = tracks.rename(columns={'unique_id':'cell_bf', 'centroid_y':'centroid-0', 'centroid_x':'centroid-1'})
+df_cells_all = df_cells_all.set_index(['cell_bf', 't'])[['area', 'centroid-0', 'centroid-1']].sort_index()
+n_t = N_FRAMES
+bbox = [0, LIVE_HEIGHT, LIVE_WIDTH, 0]
 
-df_cells_all = create_df(list_masks)
 df_traj = create_df_traj(df_cells_all)
 df_vor_area = create_df_vor_area(df_cells_all)
 df_k_neigh = create_df_k_neighbors(df_cells_all)

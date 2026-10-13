@@ -5,12 +5,12 @@ from PIL import Image
 import tifffile
 from skimage.measure import regionprops, label
 
-OVERLAP = 206
-IM_SIZE = 2048
-
 # Import local tools
 from tools.read_yaml import *
 from tools.imports import *
+
+OVERLAP = FISH_OVERLAP
+IM_SIZE = FISH_TILE_SIZE
 
 
 '''
@@ -24,7 +24,7 @@ pattern_snake_path = ROOTPATH + EXP_PATH + "Fish/pattern_snake/" + CONDITION + "
 if pathlib.Path(pattern_snake_path).exists():
     pattern_snake = np.load(pattern_snake_path, allow_pickle = True)
 else: # the default one: 5x5
-    pattern_snake = np.load(ROOTPATH + 'olgarithm/config_patterns/5x5.npy')
+    pattern_snake = np.load(FISH_DEFAULT_PATTERN)
 folder_mask = ROOTPATH + EXP_PATH + "Fish/masks/"+ CONDITION +"/"
 
 masks = []

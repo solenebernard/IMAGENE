@@ -54,7 +54,6 @@ def compute_metrics_trajectory_fourier(traj):
             "max_speed": None,
             "speed_std": None,
             "mean_turning_angle": None,
-            "convex_hull_area": None,
             "elongation": None
         }
     
@@ -73,7 +72,6 @@ def compute_metrics_trajectory_fourier(traj):
     
         # Geometric
         if len(traj) >= 3:
-            hull_area = ConvexHull(traj).area
             # Angular change
             v1 = deltas[:-1]
             v2 = deltas[1:]
@@ -87,7 +85,6 @@ def compute_metrics_trajectory_fourier(traj):
             speed_std = speeds.std()
             straightness = net_disp / total_dist if total_dist != 0 else 0
         else:
-            hull_area = 0.0
             mean_turning_angle = None
             speed_std = None
             straightness = None
@@ -106,37 +103,29 @@ def compute_metrics_trajectory_fourier(traj):
             "max_speed": max_speed,
             "speed_std": speed_std,
             "mean_turning_angle": mean_turning_angle,
-            "convex_hull_area": hull_area,
             "elongation": elongation
         }
 
 
-def reduce_features_fourier(df_fourier, order=10):
+def reduce_features_fourier_finetune(df_fourier, order=10):
     list_feats = [get_features_efd(df_fourier, o) for o in range(order)]
     df_magnitude = pd.DataFrame({f'magnitude_{i}':x[0] for i,x in enumerate(list_feats)})
     df_elliptic_area = pd.DataFrame({f'elliptic_area_{i}':x[1] for i,x in enumerate(list_feats)})
     df_fourier = df_fourier.join(df_magnitude).join(df_elliptic_area)
     
-    df_group = df_fourier.groupby('Cell bf')
+    df_group = df_fourier.groupby('cell_bf')
     new_df = df_group.aggregate(['mean', 'std', 'max', 'min'])
     new_df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in new_df.columns]
-    new_df = pd.concat((new_df, pd.DataFrame({'is_on_edge':df_group['is_on_edge'].any()})),axis=1)
-    new_df = pd.concat((new_df, pd.DataFrame({'count':df_group['a_0'].count()})),axis=1)
-
-    # Compute trajectory characteristics
-    new_df2 = pd.DataFrame()
-    rows = []
-    for _, traj in df_group[['traj_x', 'traj_y']]:
-        new_dict = compute_metrics_trajectory_fourier(np.asarray(traj))
-        rows.append(new_dict)
-    new_df2 = pd.DataFrame(rows, index=df_group.groups.keys())
-    new_df2.index.name = 'Cell bf'
-
-    new_df = new_df.drop(columns=['is_on_edge_mean', 'is_on_edge_std']).join(new_df2)
-
-    return(df_fourier, new_df)  
+    for o in range(order):
+        new_df = new_df.drop(columns=[c for c in new_df.columns \
+            if c.startswith((f'a_{o}', f'b_{o}', f'c_{o}', f'd_{o}'))])
+    return(new_df)  
 
 def reduce_features_cell(df_cell):
+    # Circularity of the cell at each time frame: 4 pi area / perimeter^2. 1 for a disc, lower for an elongated
+    # or irregular cell, independent of the size of the cell (missing value if the perimeter is 0)
+    df_cell = df_cell.copy()
+    df_cell['circularity'] = 4*np.pi*df_cell['area']/df_cell['perimeter'].where(df_cell['perimeter']>0)**2
     df_group = df_cell.groupby('cell_bf')
     new_df = df_group.aggregate(['mean', 'std', 'max', 'min'])
     new_df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in new_df.columns]
@@ -153,15 +142,29 @@ def reduce_features_cell(df_cell):
     
     
 
+def normalize_fourier(all_feats):
+    '''
+    Fourier features relative to the size of the cell, on the summaries of each cell (mean, std, max, min):
+    the magnitudes (lengths) are divided by the mean equivalent diameter of the cell over the movie,
+    and the elliptic areas by its mean area
+    '''
+    diameter, area = all_feats['equivalent_diameter_area_mean'], all_feats['area_mean']
+    for column in all_feats.columns:
+        if column.startswith('magnitude_'):
+            all_feats[column] = all_feats[column]/diameter
+        elif column.startswith('elliptic_area_'):
+            all_feats[column] = all_feats[column]/area
+    return all_feats
+
+
 def reduce_neighbors(df_neigh):
     df_group = df_neigh.groupby('cell_bf')
     new_df = df_group.aggregate(['mean', 'std', 'max', 'min'])
     new_df.columns = ['_'.join(col) if isinstance(col, tuple) else col for col in new_df.columns]
     return(new_df)     
 
-list_exp_path, list_condition = ['2025-10-13_Olga6/'], \
-                            [['1-NA', '2-MIX', '3-24H', '4-24H']]
-filter_error = True
+list_exp_path, list_condition = LEARNING_EXP_PATHS, LEARNING_CONDITIONS
+filter_error = FILTER_ERROR
 
 all_features = pd.DataFrame()
 
@@ -173,46 +176,65 @@ for exp_path, l_cond in zip(list_exp_path, list_condition):
         gene_expr = pd.read_csv(ROOTPATH + exp_path + 'Fish/' + condition + '.csv', index_col='Key')
         alignment = pd.read_csv(ROOTPATH + exp_path + 'alignment/' + condition + '-alignment.csv', index_col='BF')
 
+        # FINETUNE MASKS
+        path_feats = ROOTPATH + exp_path + 'live_cell_features/'
         # CONTOUR
-        order = 10
-        fourier = pd.read_csv(ROOTPATH + exp_path + 'live_cell_features/'+condition+'_fourier2.csv', index_col=['Cell bf', 't'])
-        fourier, fourier_mean = reduce_features_fourier(fourier, order=order)
-        for o in range(order):
-            fourier_mean = fourier_mean.drop(columns=[c for c in fourier_mean.columns \
-                if c.startswith((f'a_{o}', f'b_{o}', f'c_{o}', f'd_{o}'))])
-        if len(all_feats_mean>1):
-            all_feats_mean = all_feats_mean.join(fourier_mean)
+        order = FOURIER_ORDER
+        df_fourier_finetune = pd.read_csv(path_feats + f'fourier_finetune_{condition}.csv', index_col=['cell_bf', 't'])
+        all_feats_mean = reduce_features_fourier_finetune(df_fourier_finetune, order=order)
+        all_feats_mean['count'] = df_fourier_finetune.groupby('cell_bf').size()
+
+        # IOU
+        df_iou_finetune = pd.read_csv(path_feats + f'finetune_iou_{condition}.csv', index_col=['cell_bf', 't'])
+        all_feats_mean = all_feats_mean.join(reduce_neighbors(df_iou_finetune[['iou', 'iou_abs']]))
+
+        # SCIKITMAGE FEATURES AND TRAJECTORY
+        df_scikit_finetune = pd.read_csv(path_feats + f'finetune_scikit_{condition}.csv', index_col=['cell_bf', 't'])
+        all_feats_mean = all_feats_mean.join(reduce_features_cell(df_scikit_finetune))
+        # Fourier features relative to the size of the cell
+        all_feats_mean = normalize_fourier(all_feats_mean)
+
+        # IS ON EDGE
+        is_on_edge = pd.read_csv(path_feats + f'is_on_edge_{condition}.csv')
+        all_feats_mean['is_on_edge'] = all_feats_mean.index.isin(is_on_edge['cell_bf'])
+
+        # AREA EXPLORED
+        df_area_explored = pd.read_csv(path_feats + f'finetune_area_explored_{condition}.csv', index_col=['cell_bf'])
+        df_area_explored['area_explored_total'] /= df_area_explored['count_t']
+        all_feats_mean = all_feats_mean.join(df_area_explored[['area_explored_total']])
+        # Area of the convex hull of the union of the masks of the cell (not divided by the number of time frames)
+        if 'convex_hull_area' in df_area_explored.columns:
+            all_feats_mean = all_feats_mean.join(df_area_explored[['convex_hull_area']])
         else:
-            all_feats_mean = fourier_mean
-            all_feats_mean.index.name = 'cell_bf'
+            print(f'{condition}: no convex_hull_area in finetune_area_explored_{condition}.csv, run step 4.1 again to compute it')
         
         # DYNAMICS FEATURES
         path_dynamics = ROOTPATH + exp_path + 'live_cell_features/dynamics_feats_'+ condition + '.csv'
         if pathlib.Path(path_dynamics).exists():
             df_dyna = pd.read_csv(path_dynamics, index_col=['cell_bf'])
-            df_dyna.loc[df_dyna['std_err']>0.03, 'alpha'] = 0
+            # The fit is not reliable: missing value
+            df_dyna.loc[df_dyna['std_err']>ALPHA_MAX_STD_ERR, 'alpha'] = np.nan
             all_feats_mean = all_feats_mean.join(df_dyna[['alpha']])
         
         # NEIGHBORS FEATURES
         path_neigh = ROOTPATH + exp_path + 'live_cell_features/neighbors_feats_'+ condition + '.csv'
-        if pathlib.Path(path_dynamics).exists():
+        if pathlib.Path(path_neigh).exists():
             df_neigh = pd.read_csv(path_neigh, index_col=['cell_bf', 't']).drop(columns=['area', 'centroid-0', 'centroid-1'])
             df_neigh_mean = reduce_neighbors(df_neigh)
             all_feats_mean = all_feats_mean.join(df_neigh_mean)
             
+        # MATCHING AND GENE EXPRESSION
+        # All the live cells are kept: the cells without a FISH cell have no value for the matching and the genes
+        alignment = alignment.reset_index().set_index('Fish').join(gene_expr).reset_index().set_index('BF')
         all_feats_mean = all_feats_mean.join(alignment)
-        all_feats_mean = all_feats_mean.reset_index().set_index('Fish')
-        all_feats_mean = all_feats_mean[~all_feats_mean.index.get_level_values('Fish').isna()]
-        all_feats_mean = all_feats_mean.join(gene_expr)
 
         all_feats_mean['exp_path'] = exp_path
         all_feats_mean['condition'] = condition
         all_feats_mean = all_feats_mean.reset_index().set_index(['exp_path', 'condition', 'cell_bf'])
-        all_feats_mean = all_feats_mean.astype({'Fish': 'int64'})
         
         # Filter the error
         if filter_error:
-            all_feats_mean = all_feats_mean[all_feats_mean['max_speed']<200]
+            all_feats_mean = all_feats_mean[all_feats_mean['max_speed']<MAX_SPEED]
             all_feats_mean = all_feats_mean[all_feats_mean['is_on_edge']==False]
 
         all_features = pd.concat((all_features, all_feats_mean),axis=0)

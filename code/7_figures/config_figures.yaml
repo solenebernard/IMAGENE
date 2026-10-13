@@ -1,0 +1,95 @@
+# Parameters of the figures (7_figures/). The paths and the parameters of the pipeline are in config.yaml
+
+# Data
+exp_path_gene_profile: 'exp/' # The name of the experiment in 6_results/all_gene_profile.csv
+condition: '3-24H' # The condition of the example images
+condition_control: '1-NA' # The non-activated condition
+conditions_activated: ['3-24H', '4-24H'] # The activated conditions
+data_dir: null # The folder of the example images of the figures. null: the images are read from the folders of the pipeline (rootpath and exp_path of config.yaml)
+output_dir: '7_figures/output/' # Where the figures are saved
+
+# 1_segmentation
+segmentation:
+  tile: 0 # The BF tile
+  crop: [1024, 512, 682] # First row, first column and size of the crop
+  frames_subset: [0, 1, 2, 20] # The time frames of the short version
+  prediction_gene: 'CORO1A' # The gene of the figure with the prediction of the model
+  prediction_tile: 9 # The BF tile of this figure: a tile inside the field of view of the smFISH image
+  prediction_window: null # Part of the tile that is shown: first and last column, first and last row. null: the square where the most cells have a number of RNA
+  prediction_window_size: 1400 # Size of this square
+
+# 2_fish_rna
+fish_rna:
+  tile_control: 17 # The FISH tile of the non-activated condition
+  tile_activated: 23 # The FISH tile of the activated condition
+  crop_control: [1496, 256, 512] # First row, first column and size of the crop
+  crop_activated: [0, 0, 512]
+  quantiles_max: [0.9999, 0.9995, 0.995, 0.999, 0.999, 0.9995, 0.999, 0.9995, 0.9992, 0.9995, 0.997, 0.999] # Upper limit of the contrast for each gene
+  segmentation_crop: [700, 900] # Height and width of the figure with the segmentation
+  segmentation_rounds: 6 # The number of rounds in the projection of all the genes
+
+# 3_clumps
+clumps:
+  tile: 23 # The FISH tile
+  round: 2
+  channel: 1
+  crop: 1024 # Size of the crop
+
+# 4_matching
+matching:
+  window: 3000 # Size of the part of the field of view that is shown
+  translation_n: 61 # The number of translations tested per axis for the map of the alignment
+  translation_delta: 300 # The maximum translation tested
+
+# 5_live_features
+live_features:
+  frame: 0
+  z: 2 # The z slice of the merged BF image
+  window: [500, 2500] # The part of the field of view that is shown
+  center_cell: null # The cell of the figure with the neighbors. null: the cell of the window with the most neighbors
+  radii: [100, 200, 300]
+  trajectory_tile: 0 # The BF tile of the figures of the trajectory
+  trajectory_cells: null # The cells of the figures of the trajectory. null: the cell of the tile with the longest trajectory
+  trajectory_margin: 20
+
+# 6_fourier_features
+fourier:
+  tile: 0
+  frame: 20
+  cells: null # The cells of the figures. null: n_cells cells of the tile, after the first_cell first ones
+  first_cell: 5
+  n_cells: 5
+  orders: [1, 2, 3, 10] # The numbers of harmonics of the reconstructions
+  size: 121 # Size of the image of a cell
+
+# 11_example_cells
+example_cells:
+  cells: null # Two cells of `condition`. null: the matched cells with the highest and the lowest expression of `gene`
+  gene: 'CORO1A'
+  z: 2
+  crop: [186, 323] # Height and width of the crop
+  features: ['area_mean', 'area_std', 'area_max', 'area_min', 'iou_mean', 'iou_abs_mean', 'total_distance', 'net_displacement', 'straightness', 'avg_speed', 'max_speed', 'speed_std', 'convex_hull_area', 'area_explored_total']
+
+# 12_contours_trajectories
+contours_trajectories:
+  n_cells: 40 # The number of cells per condition
+  n_cells_gene: 30 # The number of cells with low and high expression of a gene
+  contour_limit: 85
+  trajectory_limit: 600
+
+# 13_video
+video:
+  tile: 7 # The FISH tile
+  tile_row: 1 # Position of the tile in the snake pattern
+  tile_col: 2
+  fish_round: 5
+  fish_channel: 0
+  fish_gene: 'ACTB'
+  z: 2 # The z slice of the merged BF image
+  fps: 4
+
+# 14_video_tile
+video_tile:
+  tile: 0 # The BF tile
+  fps: 4
+  alpha: 0.3 # Opacity of the color of the masks

@@ -1,26 +1,109 @@
+# Generic version of the parameters. To use your own paths without changing this file, copy it to
+# config_confidential.yaml (not tracked by git): if this copy exists, it is read instead of config.yaml
+
+# Paths, depending on the computer (cluster if the hostname contains "maestro", local otherwise)
 local:
-  rootpath: ''
+  rootpath: '../' # The folder that contains the experiment, from the folder code/. Empty if exp_path is a complete path
   rootpath_atlas: ""
-  model_path:  "sam2/checkpoints/sam2.1_hiera_large.pt"
+  model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
   num_workers: 0
   device: "cpu"
 
 cluster:
-  rootpath: ""  
-  model_path:  "sam2/checkpoints/sam2.1_hiera_large.pt"
+  rootpath: '../'
+  model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
   num_workers: 96
   device: "cuda"
   
 
 constants:
   scale: 40/63 # the scaling factor between BF and FISH microscopy
-  max_dist: 60 # The maximum distance between two cells for the matching of BF and FISH
+  max_dist: 1000 # The maximum distance between two cells for the matching of BF and FISH. Kept high: the distance is saved and the filtering is done in step 5
   size_radius: 60 # The radius for computing the indivudal videos of individual cells
-  backward: True # If the segmentation is done for the last frame: propagate with SAM2 backwardly
   
 experiment:
-  exp_path: '2025-10-13_exp/'
-  condition: '1-NA' # or 2-MIX, 3-24H, 4-24H
+  exp_path: 'exp/' # The folder of the experiment (from rootpath), with the folders Live/ and Fish/
+  condition: '3-24H' # or 2-MIX, 3-24H, 4-24H
   genes: ["GZMB", "TNF", "CD69","IFNG",  "CCR7", "CD8", "GBP4", "IL2RA",  "XP01", "IRF8",  "ACTB", "CORO1A"] 
   rounds: [0,1,2,3,4,5]
   n_features_dim: 100
+
+# Step 1: brightfield (live) images
+live:
+  n_frames: 21 # The number of time frames
+  n_rows: 4 # The grid of tiles (snake pattern)
+  n_cols: 4
+  tile_size: 2048 # The size of a tile in pixels
+  overlap: 0.1 # The fraction of overlap between two tiles
+  z_finetune: 2 # The z slice of the tiles segmented with the finetuned cellpose model
+  border_margin: 3 # A cell closer than this number of pixels to the border of its tile is considered cropped
+  iou_threshold: 0 # The minimum IoU to link the same cell between two frames
+  max_centroid_distance: 100 # The maximum distance to link two cells between two frames when their masks do not overlap
+  min_frames: 1 # Tracks present in fewer frames are removed
+  min_cell_area: 500 # Cells smaller than this number of pixels are ignored in the Voronoi diagram
+
+# Step 2: FISH images
+fish:
+  n_tiles: 25 # The number of tiles
+  n_channels: 2 # The number of FISH channels per round (without DAPI)
+  tile_size: 2048 # The size of a tile in pixels
+  overlap: 206 # The overlap between two tiles in pixels
+  default_pattern: 'config_patterns/5x5.npy' # The default snake pattern (in this repository)
+  mip_rounds: [0] # The rounds used for the MIP
+  voxel_size_nm: [399.52483870967737, 103.09496824621396, 103.09496824621396]
+  object_radius_nm: [350, 150, 150]
+  clumps_detector: True # Remove the cells overlapping a clump
+  clumps_min_size: 100 # Clumps smaller than this number of pixels are ignored
+
+# Step 3: matching of BF and FISH
+matching:
+  dapi_mask: False # Use the DAPI masks instead of the whole cell FISH masks for alignment
+  translation_n: 60 # The number of translations tested per axis
+  translation_delta: 2000 # First (basic) search: the translations are tested up to this distance, in pixels, around the two fields of view
+  translation_delta_refined: 300 # Second (refined) search: the translations are tested within this distance, in pixels, of the best translation of the first search
+
+# Step 4: features
+features:
+  fourier_order: 5 # The number of harmonics of the Fourier features
+  fourier_n_points: 256 # The number of points of the reconstructed contour
+  msd_n_max: 15 # The maximum lag of the mean squared displacement
+  neighbors_thresholds: [50, 100, 150, 200, 250] # The distances for counting the neighbors
+
+# Step 5: learning
+learning:
+  exp_paths: ['exp/'] # The experiments of the dataset (from rootpath, like experiment.exp_path)
+  conditions: [['3-24H', '4-24H']] # The conditions of each experiment of the dataset
+  conditions_gene_profile: [['1-NA', '2-MIX', '3-24H', '4-24H']] # The conditions of each experiment for the table of all gene profiles
+  filter_error: True # Remove cells on the edge and with a too large speed
+  max_speed: 200
+  alpha_max_std_err: 0.03 # Above this error on the fit, alpha is a missing value
+  genes: ['GZMB', 'CD69', 'CCR7', 'GBP4', 'ACTB', 'CORO1A', 'IRF8', 'IL2RA', 'TNF', 'CD8'] # The genes to predict
+  gene_thresholds: # Thresholds between low and high expressing genes
+    CORO1A: 40
+    TNF: 5
+    GZMB: 11
+    ACTB: 80
+    CD69: 4
+    IRF8: 4
+    CCR7: 30
+    GBP4: 5
+    XP01: 3
+    IFNG: 2
+    IL2RA: 5
+    CD8: 2
+  min_mean_rna: 3 # Cells with fewer RNA per gene (total number of RNA of the genes above divided by the number of genes with a value) are not used by the models: live cells matched to a smFISH cell with almost no RNA
+  ratio_qc: 0.3 # Quality control of the matching, in [0, 1], larger = stricter. A pair is kept if 1 - distance / distance to the second closest cell >= ratio_qc, on both sides
+  n_splits: 5 # The number of folds
+  n_iter: 30 # The number of random combinations of hyperparameters
+  n_extreme: 100 # The number of cells kept on each side for the analysis on extreme values
+  n_permutations: 200 # The number of shuffles of the labels for the permutation test
+  n_bootstrap: 1000 # The number of resamplings of the cells for the confidence intervals
+  random_state: 42 # Seed of the folds, of the random search and of the random forest
+  n_jobs: -1 # The number of cores used to train the models in parallel (-1: all the cores of the computer)
+  param_dist: # Hyperparameters of the random forest
+    n_estimators: [100]
+    max_depth: [null, 5, 10, 20]
+    min_samples_split: [2, 5, 10]
+    min_samples_leaf: [1, 2, 4]
+    max_features: ['sqrt', 'log2', null]
+    bootstrap: [True, False]

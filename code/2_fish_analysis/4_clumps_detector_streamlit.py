@@ -10,8 +10,7 @@ from scipy import ndimage
 import streamlit as st
  
  
-THRESH = 800
-MINSIZE = 100
+MINSIZE = CLUMPS_MIN_SIZE
 
 folder_tif = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '/'
 path_save = ROOTPATH + EXP_PATH + 'Fish/mip/'
@@ -55,11 +54,11 @@ st.set_page_config(layout='wide')
 # --- Parameters ---
 col1, col2, col3 = st.columns([1,1,1])
 with col1:
-    s =  st.selectbox("Select s value", options=np.arange(25))
+    s =  st.selectbox("Select s value", options=np.arange(FISH_N_TILES))
 with col2:
-    t =  st.selectbox("Select t value", options=np.arange(8))
+    t =  st.selectbox("Select t value", options=ROUNDS)
 with col3:
-    ch =  st.selectbox("Select ch value", options=np.arange(2))
+    ch =  st.selectbox("Select ch value", options=np.arange(FISH_N_CHANNELS))
 # s = st.slider("Select s value", 0, 24, 0)
 # t = st.slider("Select t value", 0, 7, 0)
 # ch = st.slider("Select ch value", 0, 1, 0)

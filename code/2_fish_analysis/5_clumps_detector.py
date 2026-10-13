@@ -7,9 +7,9 @@ from scipy import ndimage
 import imageio.v2 as imageio
 
 # Version with the merged mask
-OVERLAP = 206
-IM_SIZE = 2048
-MINSIZE = 100
+OVERLAP = FISH_OVERLAP
+IM_SIZE = FISH_TILE_SIZE
+MINSIZE = CLUMPS_MIN_SIZE
 
 path_clumps = f'{ROOTPATH}{EXP_PATH}Fish/clumps_detection/'
 thresh_csv = pd.read_csv(path_clumps + f'{CONDITION}_thresholds.csv', \
@@ -20,7 +20,7 @@ pattern_snake_path = ROOTPATH + EXP_PATH + "Fish/pattern_snake/" + CONDITION + "
 if pathlib.Path(pattern_snake_path).exists():
     pattern_snake = np.load(pattern_snake_path, allow_pickle = True)
 else: # the default one: 5x5
-    pattern_snake = np.load(ROOTPATH + 'olgarithm/config_patterns/5x5.npy')
+    pattern_snake = np.load(FISH_DEFAULT_PATTERN)
 n_rows, n_cols = pattern_snake.shape
     
 
@@ -56,10 +56,10 @@ def remove_small_regions(mask, min_size):
 
     
 # Create all masks
-for t in range(8):
-    for ch in range(2):
+for t in ROUNDS:
+    for ch in range(FISH_N_CHANNELS):
         list_mips = []
-        for s in range(25):
+        for s in range(FISH_N_TILES):
             mip = show_mip(ROOTPATH, EXP_PATH, CONDITION, s, t, ch)
             list_mips.append(mip)
         thresh = thresh_csv.loc[:,t,ch,:].max().values[0]
@@ -106,4 +106,4 @@ for t in range(8):
 
         total_image = total_image>0
         total_image = remove_small_regions(total_image, MINSIZE)
-        imageio.imwrite(path_clumps + f'{CONDITION}_mask_total_t{t_}_ch{ch_}.tiff', total_image.astype(np.uint8))
+        imageio.imwrite(path_clumps + f'{CONDITION}_mask_total_t{t_}_ch{ch_}.png', total_image.astype(np.uint8))

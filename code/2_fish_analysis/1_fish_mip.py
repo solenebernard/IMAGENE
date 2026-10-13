@@ -3,15 +3,13 @@ from tools.read_yaml import *
 from tools.imports import *
 from tools.tools_fish import *
 
-CONDITION = '1-NA'
 folder_tif = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '/'
 path_save = ROOTPATH + EXP_PATH + 'Fish/mip/'
 
 # Take the MIP on only two rounds (4 genes + DAPI)
-t_rounds = [0, 1, 2, 3, 4, 5, 6, 7]
-t_rounds = [0]
+t_rounds = FISH_MIP_ROUNDS
 
-for idx in range(25):
+for idx in range(FISH_N_TILES):
 
     s_ = str(idx).zfill(2)
     frame_names = []

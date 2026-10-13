@@ -9,21 +9,19 @@ import cv2
 # Combined with the fish segmentation
 # Create gene expression
 
-CONDITION = '4-24H'
 # Initialize variables
 folder_tif = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '/'
 folder_mask = ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + '/'
 folder_save_loc = ROOTPATH + EXP_PATH + 'Fish/bigfish/' + CONDITION + '/'
 device = DEVICE
 output_file = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '.csv'
-CLUMPS_DETECTOR = True
 
 # Load the custom snake pattern made by the microscope
 pattern_snake_path = ROOTPATH + EXP_PATH + "Fish/pattern_snake/" + CONDITION + ".npy"
 if pathlib.Path(pattern_snake_path).exists():
     pattern_snake = np.load(pattern_snake_path, allow_pickle = True)
 else: # the default one: 5x5
-    pattern_snake = np.load(ROOTPATH + 'olgarithm/config_patterns/5x5.npy')
+    pattern_snake = np.load(FISH_DEFAULT_PATTERN)
 n_rows, n_cols = pattern_snake.shape
 
 
@@ -33,8 +31,8 @@ n_rows, n_cols = pattern_snake.shape
 dict_gene = {}
 
 # Version with the merged mask
-OVERLAP = 206
-IM_SIZE = 2048
+OVERLAP = FISH_OVERLAP
+IM_SIZE = FISH_TILE_SIZE
 
 # Load the big mask
 big_mask = tifffile.imread(folder_mask + 'mosaic_mask_reassigned.tiff')

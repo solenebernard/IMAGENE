@@ -1,6 +1,8 @@
 # Import local tools
 from tools.read_yaml import *
 from tools.imports import *
+from tools.tools_bf import load_tracks, load_tracked_mask
+from tools.matching import build_overlay, save_matching_illustration
 
 import cv2
 from scipy.spatial.distance import cdist
@@ -10,22 +12,17 @@ name_exp = EXP_PATH[:-1]
 
 # Constants
 scale = SCALE
-# max_dist = MAX_DIST_MATCHING 
-max_dist = 1000 # Do not pick a custom threshold: make it high, and save the distance for each matching, so we can filter after! (do not filter right now)
+max_dist = MAX_DIST_MATCHING # Do not pick a custom threshold: make it high, and save the distance for each matching, so we can filter after! (do not filter right now)
 
-# Do you we the postuv mask of brighfield for alignment?
-postuv_mask = False
 # Do you we the DAPI mask or whole cells fish masks for alignment?
-DAPI_mask = False
+DAPI_mask = DAPI_MASK
 
 
 # Initialize variables
 data_path_live = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/'
 data_path_raw = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/live_dataset/' 
 video_dir = data_path_live + 'video/'
-path_output = data_path_live + 'results/'
 save_path_file = ROOTPATH + EXP_PATH + "alignment/"+CONDITION+"-alignment.csv"
-bf_dir =  ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/clean_masks/' 
 device = DEVICE
 
 # Create of fast version of extract_centroid_coords
@@ -159,7 +156,7 @@ def brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, 
 
     return(x_trans, y_trans, error_mat)
 
-def get_translation(p0, p1, n=40, delta=1500):
+def get_translation(p0, p1, n=40, delta=1500, delta_refined=300):
 
     p0_xmin, p0_xmax, p0_ymin, p0_ymax = p0[:,0].min(), p0[:,0].max(), \
                 p0[:,1].min(), p0[:,1].max()
@@ -182,10 +179,10 @@ def get_translation(p0, p1, n=40, delta=1500):
     print(x_trans, y_trans)
     print(np.argmin(error_mat)//n, np.argmin(error_mat)%n)
     # Add one leval of dichotomy
-    dx_trans_max = x_trans + 100
-    dy_trans_max = y_trans + 100
-    dx_trans_min = x_trans - 100
-    dy_trans_min = y_trans - 100
+    dx_trans_max = x_trans + delta_refined
+    dy_trans_max = y_trans + delta_refined
+    dx_trans_min = x_trans - delta_refined
+    dy_trans_min = y_trans - delta_refined
 
     x_trans, y_trans, error_mat2 = brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, n)
     plt.imshow((error_mat2.T),origin='lower')
@@ -252,25 +249,11 @@ def compute_area(mask_pos, list_ind):
     return(np.asarray(list_sum))
 
 
-list_files_bf = list(pathlib.Path(bf_dir).glob('seg_movie_merged_t*_cp_mask.png'))
-list_files_bf.sort()
-img = Image.open(list_files_bf[-1])
-
-if postuv_mask:
-    img_match = list(pathlib.Path(bf_dir).glob('*POSTUV*'))[0]
-    img_match = Image.open(img_match)
-else:
-    img_match = img
-    
-
-bf_segmentation_match = np.asarray(img_match)
-# bf_segmentation_match = filter_segmentation(bf_segmentation_match)
-
-if postuv_mask:
-    bf_segmentation = np.asarray(img)
-    # bf_segmentation = filter_segmentation(bf_segmentation)
-else:
-    bf_segmentation = bf_segmentation_match
+# BF cells: ID and centroid of the tracked cells at the last time frame, from the table of the tracks (step 1.3)
+tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
+tracks_last = tracks[tracks['t']==N_FRAMES-1]
+mask_values_bf = tracks_last['unique_id'].values
+centroids_bf = tracks_last[['centroid_x', 'centroid_y']].values
 
 
 # Fish segmentation
@@ -289,13 +272,11 @@ else:
 
 
 # Extract centroids
-mask_values_bf, centroids_bf, areas_bf = extract_centroid_coords(bf_segmentation)
-mask_values_bf_match, centroids_bf_match, areas_bf_match = extract_centroid_coords(bf_segmentation_match)
 mask_values_fish, centroids_fish, areas_fish = extract_centroid_coords(FISH_segmentation)
 mask_values_fish_match, centroids_fish_match, areas_fish_match = extract_centroid_coords(fish_match)
 
 # Translate 
-x_trans, y_trans, error_mat = get_translation(centroids_fish_match, centroids_bf_match, n=60, delta=2000)
+x_trans, y_trans, error_mat = get_translation(centroids_fish_match, centroids_bf, n=TRANSLATION_N, delta=TRANSLATION_DELTA, delta_refined=TRANSLATION_DELTA_REFINED)
 centroids_bf = centroids_bf + np.array([x_trans, y_trans])
 
 # Match with closest neighbour
@@ -319,7 +300,6 @@ matched_dist_2_bf = mat_dist[ind2_p0, ind_p1]
 
 
 area_fish = compute_area(FISH_segmentation[FISH_segmentation>0], matched_fish_id)
-area_bf = compute_area(bf_segmentation[bf_segmentation>0], matched_bf_id)
 
 
 # Save dictionnary in csv
@@ -330,3 +310,14 @@ save_frame = pd.DataFrame({"BF":matched_bf_id, "Fish":matched_fish_id, \
                         'Distance_2nd_bf_to_fish': matched_dist_2_bf, 'Distance_2nd_fish_to_bf': matched_dist_2_fish, \
                         'Id_2nd_bf_to_fish': matched_fish_id_scd, 'Id_2nd_fish_to_bf': matched_bf_id_scd})
 save_frame.to_csv(save_path_file, index=False)
+
+
+# SAVE THE OVERLAY: on the whole BF field of view
+# First channel: BF mask of the last time frame with the track ID. Second channel: FISH mask, placed with the alignment
+Image.MAX_IMAGE_PIXELS = 2000000000
+bf_segmentation = load_tracked_mask(ROOTPATH, EXP_PATH, CONDITION, N_FRAMES-1, tracks)
+overlay_save = build_overlay(bf_segmentation, FISH_segmentation, x_trans, y_trans)
+np.save(ROOTPATH + EXP_PATH + "alignment/"+CONDITION+ '-overlay.npy', overlay_save)
+
+# ILLUSTRATION: global alignment and pairs kept after the quality control
+save_matching_illustration(overlay_save, save_frame, RATIO_QC, ROOTPATH + EXP_PATH + "alignment/"+CONDITION+ '-matching.png', title=CONDITION)

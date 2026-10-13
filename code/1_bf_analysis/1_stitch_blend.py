@@ -6,8 +6,8 @@ from tools.imports import *
 # === PARAMETERS ===
 image_folder = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/non_merged/'
 save_folder = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/'
-rows, cols = 4, 4                # Grid size
-overlap = 0.1
+rows, cols = LIVE_N_ROWS, LIVE_N_COLS                # Grid size
+overlap = LIVE_OVERLAP
 
 print(image_folder, save_folder)
 

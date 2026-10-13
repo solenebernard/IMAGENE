@@ -123,9 +123,6 @@ def cell_crop(path_folder_save, list_tif_images, list_masks, id_cell, Xmin, Xmax
     # Create a folder for each idx
     idx_folder = os.path.join(path_folder_save, f'cell_{id_cell}')
     os.makedirs(idx_folder, exist_ok=True)
-    # create folder for the mask
-    path_folder_mask =  os.path.join(idx_folder, 'texture')
-    os.makedirs(path_folder_mask, exist_ok=True)
 
     # Get the bounding box of the cell
     t,x,y = np.where(list_masks==id_cell)
@@ -201,13 +198,6 @@ def cell_crop(path_folder_save, list_tif_images, list_masks, id_cell, Xmin, Xmax
         # plt.imshow(final_image[majority_z])
         # plt.show()
         tifffile.imwrite(output_tiff_path, final_image[majority_z])
-        
-        # All z stack
-        tifffile.imwrite(os.path.join(path_folder_mask, 't{}.tiff'.format(str(t_).zfill(2))), \
-                         final_image)
-    
-    # And the mask
-    tifffile.imwrite(os.path.join(path_folder_mask, 'mask.tiff'), all_masks)
     
     return(majority_z)
 
@@ -220,14 +210,16 @@ def main():
     # Constants
     size_radius = SIZE_RADIUS
 
-    list_tif_images, list_masks = load_images_and_masks(ROOTPATH, EXP_PATH, CONDITION, clean=True)
+    list_tif_images, list_masks = load_images_and_masks(ROOTPATH, EXP_PATH, CONDITION, t_max=N_FRAMES)
 
     # Get the dimensions of the images
     Xmin, Xmax = 0, list_tif_images.shape[2]
     Ymin, Ymax = 0, list_tif_images.shape[3]
 
-    # Get index of cells
-    idx_cells = np.unique(list_masks[list_masks>0])
+    # Get index of cells: the tracks present in all the time frames
+    tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
+    n_frames = tracks.groupby('unique_id').size()
+    idx_cells = n_frames.index[n_frames==N_FRAMES].values
 
     # Create the new dataset folder
     path_new_data = os.path.join(data_path_raw, save_path_end)

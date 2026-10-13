@@ -48,8 +48,8 @@ s_values = sorted(s_values)
 # Run BIGFISH 
 
 # voxel_size_nm = (300, 103, 103)
-voxel_size_nm = (399.52483870967737, 103.09496824621396, 103.09496824621396)
-object_radius_nm = (350, 150, 150)
+voxel_size_nm = VOXEL_SIZE_NM
+object_radius_nm = OBJECT_RADIUS_NM
 
 thresholds_dict = np.load(folder_save_loc + CONDITION + '_thresh_BIGFISH.npy', allow_pickle=True).item()
 
@@ -72,7 +72,7 @@ for s_ in s_values[args.loop_i:args.loop_i+1]:
     # Loop through the rounds
     for t_ in t_values:
         # Loop through the channel:
-        for ch in range(2): ######################## TO CHANGE
+        for ch in range(FISH_N_CHANNELS):
             ch_ = str(ch).zfill(2)
             name_file = '*t{}_s{}_z*_ch{}.tif'.format(t_, s_, ch_) # Take all z
             frame_names = list(pathlib.Path(folder_tif).glob(name_file))
