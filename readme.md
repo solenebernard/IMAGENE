@@ -6,6 +6,8 @@ Each cell is filmed in brightfield (BF), then fixed and imaged by sequential smF
 
 [▶ Watch demo](code/demo.mp4)
 
+[▶ Watch the control experiment](control/demo_control.mp4): in this experiment each cell carries a colour barcode, read before the live imaging and again after fixation, to check that a live cell and the fixed cell it is paired with are the same cell. The movie follows the cells from the colour barcode to the timelapse, the timelapse after UV and the colour after fixation, with one identifier per cell.
+
 ## Overview
 
 The repository has two folders: `code/`, with the scripts, and `exp/`, where the images and tables of the experiment are placed (see [Data layout](#data-layout)). All the commands below are run from `code/`, and the paths of the files and folders of the code are given from `code/`.
