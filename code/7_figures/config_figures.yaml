@@ -80,8 +80,6 @@ contours_trajectories:
 # 13_video
 video:
   tile: 7 # The FISH tile
-  tile_row: 1 # Position of the tile in the snake pattern
-  tile_col: 2
   fish_round: 5
   fish_channel: 0
   fish_gene: 'ACTB'

@@ -23,7 +23,6 @@ data_path_live = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/'
 data_path_raw = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/live_dataset/' 
 video_dir = data_path_live + 'video/'
 save_path_file = ROOTPATH + EXP_PATH + "alignment/"+CONDITION+"-alignment.csv"
-device = DEVICE
 
 # Create of fast version of extract_centroid_coords
 def extract_centroid_coords(mask, unique_values=None):

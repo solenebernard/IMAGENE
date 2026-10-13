@@ -4,16 +4,11 @@
 # Paths, depending on the computer (cluster if the hostname contains "maestro", local otherwise)
 local:
   rootpath: '../' # The folder that contains the experiment, from the folder code/. Empty if exp_path is a complete path
-  rootpath_atlas: ""
   model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
-  num_workers: 0
-  device: "cpu"
 
 cluster:
   rootpath: '../'
   model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
-  num_workers: 96
-  device: "cuda"
   
 
 constants:
@@ -26,7 +21,6 @@ experiment:
   condition: '3-24H' # or 2-MIX, 3-24H, 4-24H
   genes: ["GZMB", "TNF", "CD69","IFNG",  "CCR7", "CD8", "GBP4", "IL2RA",  "XP01", "IRF8",  "ACTB", "CORO1A"] 
   rounds: [0,1,2,3,4,5]
-  n_features_dim: 100
 
 # Step 1: brightfield (live) images
 live:

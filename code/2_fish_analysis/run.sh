@@ -28,7 +28,7 @@ mv ${FISH}/mip/${CONDITION}_round_*_mip_cp_masks.png ${FISH}/masks/${CONDITION}/
 python3 -m 2_fish_analysis.2_cell_reassignment
 
 ### M4 ### Manual: the thresholds of detection must be saved before 2.3
-# in ${FISH}/bigfish/${CONDITION}/${CONDITION}_thresh_BIGFISH.npy (see readme.md)
+# in ${FISH}/bigfish/${CONDITION}/${CONDITION}_thresh_BIGFISH.npy (see details.md)
 
 ### 2.3 ### Detect the spots with bigfish: one call per tile
 for s in $(seq 0 $((FISH_N_TILES-1))); do

@@ -19,10 +19,7 @@ else:
 
 # Environment depending on which computer
 ROOTPATH = config[env]["rootpath"]
-ROOTPATH_ATLAS = config[env].get("rootpath_atlas")
 MODEL_FINETUNE_PATH = config[env]['model_finetune_path']
-DEVICE = config[env]["device"]
-NUM_WORKERS = config[env]["num_workers"]
 
 # Constants
 SCALE = float(eval(config["constants"]["scale"]))
@@ -34,7 +31,6 @@ EXP_PATH = config["experiment"]["exp_path"]
 CONDITION = config["experiment"]["condition"]
 GENES = config["experiment"]["genes"]
 ROUNDS = config["experiment"]["rounds"]
-N_FEATURES_DIM = config["experiment"]["n_features_dim"]
 
 # Step 1: brightfield (live) images
 N_FRAMES = config["live"]["n_frames"]
@@ -97,5 +93,3 @@ RANDOM_STATE = config["learning"]["random_state"]
 MIN_MEAN_RNA = config["learning"].get("min_mean_rna", 3)
 N_JOBS = config["learning"].get("n_jobs", -1)
 PARAM_DIST = config["learning"]["param_dist"]
-
-print(f"Running on {DEVICE}")

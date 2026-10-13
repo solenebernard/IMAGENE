@@ -13,7 +13,6 @@ import cv2
 folder_tif = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '/'
 folder_mask = ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + '/'
 folder_save_loc = ROOTPATH + EXP_PATH + 'Fish/bigfish/' + CONDITION + '/'
-device = DEVICE
 output_file = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '.csv'
 
 # Load the custom snake pattern made by the microscope

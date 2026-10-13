@@ -26,7 +26,6 @@ args = parser.parse_args()
 folder_tif = ROOTPATH + EXP_PATH + 'Fish/' + CONDITION + '/'
 folder_mask = ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + '/'
 folder_save_loc = ROOTPATH + EXP_PATH + 'Fish/bigfish/' + CONDITION + '/'
-device = DEVICE
 
 dt = DetectionPipeline()
 
