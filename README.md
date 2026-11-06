@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/2f7d5170-1d3e-4273-b719-edd5441dc6d5
-
 # IMAGENE
 
 Code and data accompanying the IMAGENE study: predicting the gene expression of single T cells from their behaviour in label-free live imaging.
