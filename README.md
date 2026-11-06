@@ -1,6 +1,6 @@
 
 
-
+https://github.com/user-attachments/assets/2f7d5170-1d3e-4273-b719-edd5441dc6d5
 
 # IMAGENE
 
@@ -10,9 +10,11 @@ Code and data accompanying the IMAGENE study: predicting the gene expression of 
 
 https://github.com/user-attachments/assets/246bf983-aec8-4e2e-9442-9fccf3b8a0b1
 
+**Watch the control demo**: the accuracy of this pairing is measured with cells that carry a colour barcode (two fluorescent dyes). The movie follows the same cells, with one identifier and the colour of their barcode each, through the barcode read before the live imaging, the live-cell timelapse, the cells immobilised by photoactivation (up to 55 min later), and the barcode read again after fixation. It ends with the pairs of live and fixed cells passing the quality control: a correct pair has the same barcode on both sides.
+
+https://github.com/user-attachments/assets/85d447a5-f55c-4bf6-94f7-df36877f4c20
 
 
-[▶ Watch the control experiment (32 s)](demo_control.mp4): the accuracy of this pairing is measured with cells that carry a colour barcode (two fluorescent dyes). The movie follows the same cells, with one identifier and the colour of their barcode each, through the barcode read before the live imaging, the live-cell timelapse, the cells immobilised by photoactivation (up to 55 min later), and the barcode read again after fixation. It ends with the pairs of live and fixed cells passing the quality control: a correct pair has the same barcode on both sides.
 
 Each cell is filmed in brightfield (BF), then fixed and imaged by sequential smFISH on the same field of view. The pipeline segments the cells in the BF movie with a finetuned Cellpose model and tracks them over time, counts the RNA spots of each gene in the smFISH images, pairs every live cell with its smFISH counterpart, extracts shape, motility and neighbourhood features from the movie, and trains random forests that predict the expression of each gene from these features. A control experiment, in which each cell carries a colour barcode read before the movie and after fixation, measures the accuracy of the pairing of live and fixed cells.
 
