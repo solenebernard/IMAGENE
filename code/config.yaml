@@ -1,24 +1,20 @@
 # Generic version of the parameters. To use your own paths without changing this file, copy it to
 # config_confidential.yaml (not tracked by git): if this copy exists, it is read instead of config.yaml
 
-# Paths, depending on the computer (cluster if the hostname contains "maestro", local otherwise)
-local:
+# Paths
+paths:
   rootpath: '../' # The folder that contains the experiment, from the folder code/. Empty if exp_path is a complete path
   model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
 
-cluster:
-  rootpath: '../'
-  model_finetune_path: "models/general_exp_retrained_bf_all_conditions" # The finetuned cellpose model
-  
-
 constants:
   scale: 40/63 # the scaling factor between BF and FISH microscopy
+  pixel_size_um: 0.1625 # Size of a pixel of the BF (live) images, in µm (40x objective)
   max_dist: 1000 # The maximum distance between two cells for the matching of BF and FISH. Kept high: the distance is saved and the filtering is done in step 5
-  size_radius: 60 # The radius for computing the indivudal videos of individual cells
+  size_radius: 60 # The radius for computing the videos of individual cells
   
 experiment:
   exp_path: 'exp/' # The folder of the experiment (from rootpath), with the folders Live/ and Fish/
-  condition: '3-24H' # or 2-MIX, 3-24H, 4-24H
+  condition: '3-24H' # or 4-24H
   genes: ["GZMB", "TNF", "CD69","IFNG",  "CCR7", "CD8", "GBP4", "IL2RA",  "XP01", "IRF8",  "ACTB", "CORO1A"] 
   rounds: [0,1,2,3,4,5]
 
@@ -67,7 +63,8 @@ features:
 learning:
   exp_paths: ['exp/'] # The experiments of the dataset (from rootpath, like experiment.exp_path)
   conditions: [['3-24H', '4-24H']] # The conditions of each experiment of the dataset
-  conditions_gene_profile: [['1-NA', '2-MIX', '3-24H', '4-24H']] # The conditions of each experiment for the table of all gene profiles
+  results_path: 'exp/results/' # The tables of step 5 (from rootpath, like experiment.exp_path)
+  conditions_gene_profile: [['1-NA', '3-24H', '4-24H']] # The conditions of each experiment for the table of all gene profiles
   filter_error: True # Remove cells on the edge and with a too large speed
   max_speed: 200
   alpha_max_std_err: 0.03 # Above this error on the fit, alpha is a missing value
@@ -101,3 +98,8 @@ learning:
     min_samples_leaf: [1, 2, 4]
     max_features: ['sqrt', 'log2', null]
     bootstrap: [True, False]
+
+# Control experiment: the data of its main figure (7_control_figures/), and its results
+control:
+  exp_path: 'control/' # The folder of the control experiment (from rootpath)
+  ratio_qc: 0.6 # Quality control of the pairs of live and fixed cells in its figures (as learning.ratio_qc)

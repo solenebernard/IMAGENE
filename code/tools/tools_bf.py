@@ -1,3 +1,8 @@
+'''
+Tools for the brightfield (live) images of step 1: position of the tiles in the merged image, cellpose masks of the
+tiles, global masks and tracks, masks with the track ID of each cell, BF images, and choice of the z slice in focus
+'''
+
 
 import numpy as np
 import pandas as pd
@@ -7,13 +12,14 @@ from PIL import Image
 import re
 import cv2
 
+
 def compute_snake_tile_coords(tile_size, overlap, n_rows, n_cols):
     """
     Position (x0, x1, y0, y1) of each tile in the merged image.
     The tiles follow a snake pattern: left to right for even rows, right to left for odd rows.
     overlap: in pixels
     """
-    coords = [None] * (n_rows*n_cols)
+    coords = [None] * (n_rows * n_cols)
     step = tile_size - overlap
     tile_id = 0
     for row in range(n_rows):
@@ -35,10 +41,10 @@ def load_masks_tile_cellpose(rootpath, exp_path, condition, t, n_tiles=16, z=2):
     data_path_raw = f'{rootpath}{exp_path}/Live/{condition}/non_merged/finetune_z2/'
     path_tiles = pathlib.Path(data_path_raw)
     t_, z_ = str(t).zfill(2), str(z).zfill(2)
-    tile_masks_path = [list(path_tiles.glob(f'*t{t_}_s{str(s).zfill(2)}_z{z_}_ch00_cp_masks.png'))[0]\
-                  for s in range(n_tiles)]
+    tile_masks_path = [list(path_tiles.glob(f'*t{t_}_s{str(s).zfill(2)}_z{z_}_ch00_cp_masks.png'))[0]
+                       for s in range(n_tiles)]
     tile_masks = np.asarray([Image.open(x) for x in tile_masks_path])
-    return(tile_masks)
+    return (tile_masks)
 
 
 ##### TRACKED MASKS
@@ -76,7 +82,7 @@ def load_global_mask(rootpath, exp_path, condition, t):
 
 def load_tracked_mask(rootpath, exp_path, condition, t, tracks):
     """Global mask of the time frame t, with the track ID of each cell"""
-    tracks_t = tracks[tracks['t']==t]
+    tracks_t = tracks[tracks['t'] == t]
     mask = load_global_mask(rootpath, exp_path, condition, t)
     return relabel(mask, tracks_t['global_id'].values, tracks_t['unique_id'].values)
 
@@ -96,7 +102,7 @@ def load_tracked_tile_mask(rootpath, exp_path, condition, t, s, tracks, id_map, 
     t_, s_, z_ = str(t).zfill(2), str(s).zfill(2), str(z).zfill(2)
     mask = np.asarray(Image.open(list(folder.glob(f'*t{t_}_s{s_}_z{z_}_ch00_cp_masks.png'))[0]))
     # Cells of the tile: ID in the tile -> ID in the global mask -> track ID
-    cells = id_map[(id_map['t']==t)&(id_map['s']==s)].merge(tracks[tracks['t']==t], on=['t', 'global_id'])
+    cells = id_map[(id_map['t'] == t) & (id_map['s'] == s)].merge(tracks[tracks['t'] == t], on=['t', 'global_id'])
     return relabel(mask, cells['local_id'].values, cells['unique_id'].values)
 
 
@@ -104,21 +110,21 @@ def load_tracked_tile_masks(rootpath, exp_path, condition, t_max, n_tiles=16, z=
     """Cellpose masks of all the tiles and time frames, with the track ID of each cell. Dimension: (t,s,x,y)"""
     tracks = load_tracks(rootpath, exp_path, condition)
     id_map = load_global_id_map(rootpath, exp_path, condition)
-    return np.asarray([[load_tracked_tile_mask(rootpath, exp_path, condition, t, s, tracks, id_map, z=z) \
+    return np.asarray([[load_tracked_tile_mask(rootpath, exp_path, condition, t, s, tracks, id_map, z=z)
                         for s in range(n_tiles)] for t in range(t_max)])
 
 
-def load_bf_images(rootpath, exp_path, condition, t_max = None):
+def load_bf_images(rootpath, exp_path, condition, t_max=None):
     data_path_raw = rootpath + exp_path + 'Live/' + condition + '/'
 
-    # Scan all all t frames 
+    # Scan all all t frames
     # Get all possible z
     frame_names_z = list(pathlib.Path(data_path_raw).glob('*_t00_z*_ch00.tif'))
     pattern = r"_z(\d{2})_"
     match_z = [re.search(pattern, str(filename)) for filename in frame_names_z]
     match_z = [m.group(1) for m in match_z if m]
     match_z.sort()
-    max_z_ = str(len(match_z)-1).zfill(2)
+    max_z_ = str(len(match_z) - 1).zfill(2)
 
     # Get all frames
     frame_names_t = list(pathlib.Path(data_path_raw).glob('*_t*_z{}_ch00.tif'.format(max_z_)))
@@ -131,34 +137,36 @@ def load_bf_images(rootpath, exp_path, condition, t_max = None):
         match_t = np.arange(t_max)
         match_t = [str(t).zfill(2) for t in match_t]
     # Extract all frame names: all t and all z
-    frame_names = [[list(pathlib.Path(data_path_raw).glob('*_t{}_z{}_ch00.tif'.format(t_,z_)))[0] \
-                    for z_ in match_z] for t_ in match_t] 
+    frame_names = [[list(pathlib.Path(data_path_raw).glob('*_t{}_z{}_ch00.tif'.format(t_, z_)))[0]
+                    for z_ in match_z] for t_ in match_t]
 
     # Load all the masks (for each time frame) and all brightfield images
     list_tif_images = []
 
     for i, frames in enumerate(frame_names):
-        im = [tifffile.imread(frame) for frame in frames] # all z for a given t
+        im = [tifffile.imread(frame) for frame in frames]  # all z for a given t
         list_tif_images.append(np.asarray(im))
 
-    list_tif_images = np.asarray(list_tif_images) # Dimension: (t,z,x,y)
-    
-    return(list_tif_images)
+    list_tif_images = np.asarray(list_tif_images)  # Dimension: (t,z,x,y)
+
+    return (list_tif_images)
+
 
 def load_images_and_masks(rootpath, exp_path, condition, t_max):
     list_tif_images = load_bf_images(rootpath, exp_path, condition, t_max=t_max)
     list_masks = load_tracked_masks(rootpath, exp_path, condition, t_max)
-    return(list_tif_images, list_masks)
+    return (list_tif_images, list_masks)
 
 
 def remove_border(im):
     image = np.copy(im)
     # Crop the border with 0 values
-    _,x,y = np.where(image>0)
-    if len(x)>0:
-        xmin, xmax, ymin, ymax = x.min(),x.max(), y.min(), y.max()
-        image = image[:, xmin:xmax,ymin:ymax]
-    return(image)
+    _, x, y = np.where(image > 0)
+    if len(x) > 0:
+        xmin, xmax, ymin, ymax = x.min(), x.max(), y.min(), y.max()
+        image = image[:, xmin:xmax, ymin:ymax]
+    return (image)
+
 
 def pick_z_laplacian(image):
     """
@@ -173,4 +181,60 @@ def pick_z_laplacian(image):
     metrics = np.asarray(metrics)
     # Best metric
     j = np.argmax(metrics)
-    return(j)
+    return (j)
+
+
+##### SHAPE OF THE CELLS (step 4.1)
+
+def get_contour(mask):
+    '''Contour (x, y) of the largest region of the mask, starting at the point at the angle 0 from the centroid'''
+    contours, _ = cv2.findContours((mask > 0).astype('uint8'), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    # Choose the largest contour (assuming single cell per mask)
+    contour = max(contours, key=cv2.contourArea)
+    # Reshape to Nx2 format (x, y), in float
+    contour = contour[:, 0, :].astype(float)
+
+    # Find the starting point
+    cx, cy = contour.mean(axis=0)
+    # Compute angles from centroid to each point
+    angles = np.arctan2(contour[:, 1] - cy, contour[:, 0] - cx)
+    # Find point closest to angle 0
+    start_idx = np.argmin(np.abs(angles))
+    contour_aligned = np.roll(contour, -start_idx, axis=0)
+    return (contour_aligned)
+
+
+def compute_normalized_efd(contour, order=10, enforce_d1_nonneg=True):
+    '''
+    Elliptic Fourier descriptors of a closed contour (Kuhl and Giardina, 1982, parametrised by the arc length,
+    pyefd.elliptic_fourier_descriptors), normalised for rotation and starting point but not for size.
+    contour: (N, 2) points of the contour, in order
+    enforce_d1_nonneg: flip the sine terms so that d1 >= 0 (the sign of the normalised descriptors is not unique)
+    Returns the coefficients (order, 4), columns [a_n, b_n, c_n, d_n] for n = 1..order, and the centre (A0, C0)
+    '''
+    import pyefd
+    contour = np.asarray(contour, dtype=float)
+    # Closed contour: the last point is the first one
+    if not np.array_equal(contour[0], contour[-1]):
+        contour = np.vstack((contour, contour[:1]))
+    efd = pyefd.elliptic_fourier_descriptors(contour, order=order, normalize=False)
+    locus = np.asarray(pyefd.calculate_dc_coefficients(contour))
+    efd_norm = pyefd.normalize_efd(efd, size_invariant=False)  # pyefd normalization (rotation/phase)
+    if enforce_d1_nonneg:
+        if efd_norm[0, 3] < 0:  # d1 < 0 -> flip sine terms b_n and d_n
+            efd_norm[:, 1] *= -1
+            efd_norm[:, 3] *= -1
+    return efd_norm, locus
+
+
+def efd_magnitude_area(a, b, c, d):
+    '''
+    Magnitude sqrt(a^2 + b^2 + c^2 + d^2) and area of the ellipse (pi * product of its semi-axes) of each harmonic,
+    from its coefficients [a, b, c, d] (numbers, arrays or columns of a table)
+    '''
+    term1 = a**2 + b**2 + c**2 + d**2
+    term2 = np.sqrt((a**2 + b**2 - c**2 - d**2)**2 + 4 * (a * c + b * d)**2)
+    # Semi-axes of the ellipse of each harmonic
+    lambda1 = np.sqrt(0.5 * (term1 + term2))
+    lambda2 = np.sqrt(0.5 * np.clip(term1 - term2, a_min=0, a_max=1e8))  # safety clip
+    return np.sqrt(term1), np.pi * lambda1 * lambda2

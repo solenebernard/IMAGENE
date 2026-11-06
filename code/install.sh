@@ -30,18 +30,3 @@ if missing:
     raise SystemExit('Libraries not found: ' + ', '.join(missing))
 print(f'{len(libraries)} python libraries found')
 PYTHON
-
-### Tools that are not python libraries
-# ffmpeg with the H.264 encoder: for the videos of 7_figures (else the videos are saved in MPEG-4)
-if command -v ffmpeg > /dev/null && ffmpeg -hide_banner -encoders 2> /dev/null | grep -q libx264; then
-    echo "ffmpeg with libx264 found"
-else
-    echo "WARNING: ffmpeg with libx264 not found. Install it with: conda install -c conda-forge ffmpeg"
-fi
-
-# Detection of the spots (step 2.3): the repository pipeline_smfish-main must be next to the folder code/
-if [ -d "../pipeline_smfish-main/src" ]; then
-    echo "pipeline_smfish-main found"
-else
-    echo "WARNING: ../pipeline_smfish-main/src not found. It is needed for the detection of the spots (step 2.3)"
-fi

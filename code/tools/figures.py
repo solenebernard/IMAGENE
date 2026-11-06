@@ -1,107 +1,70 @@
 '''
-Shared tools for the figures (7_figures/)
-- parameters of the figures (7_figures/config_figures.yaml)
-- loading of the dataset, of the images and of the masks
+Shared tools for the figures (6_exp_figures/)
+- parameters of the figures (6_exp_figures/config_figures.yaml)
+- loading of the dataset and of the tables of step 4.1, contours and trajectories of the cells
+- assembly of the main figure from the panels saved as PNG
 - saving of the figures
 '''
 
 import matplotlib
-matplotlib.use('Agg') # The figures are saved, not shown
-from matplotlib import rc
-from skimage import measure
+matplotlib.use('Agg')  # The figures are saved, not shown
 from sklearn.preprocessing import StandardScaler
 
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
-from tools.tools_fish import show_mip
-from tools.tools_bf import load_tracks, load_global_id_map, load_tracked_mask, load_tracked_tile_mask
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pathlib
+import yaml
+from PIL import Image
+from tools.read_yaml import (
+    EXP_PATH, FOURIER_ORDER, LEARNING_GENES, MIN_MEAN_RNA, N_FRAMES, RANDOM_STATE, RATIO_QC, RESULTS_PATH, ROOTPATH
+)
 from tools.matching import passes_ratio_qc_table
 
-rc('font', family='sans-serif')
-rc('font', **{'sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans']})
+from tools.style import FONTS, PANEL_UNIT, set_style
+
+# Same font on all the figures (tools/style.py)
+set_style()
 Image.MAX_IMAGE_PIXELS = 2000000000
 
 # Parameters of the figures
-with open("7_figures/config_figures.yaml", "r") as f:
+with open("6_exp_figures/config_figures.yaml", "r") as f:
     FIG = yaml.safe_load(f)
 
 FIG_CONDITION = FIG['condition']
 DATA_PATH = ROOTPATH + EXP_PATH
-# Folder of the example images, or None to read the images from the folders of the pipeline
-EXAMPLE_DIR = pathlib.Path(FIG['data_dir']) if FIG['data_dir'] is not None else None
+# Folder with thumbnails/ (images of the cells of 2_umap), or None to read them from the single-cell movies of step 1.4
+EXAMPLE_DIR = pathlib.Path(ROOTPATH + FIG['data_dir']) if FIG['data_dir'] is not None else None
+# Folder of the figures
+OUTPUT_DIR = pathlib.Path(ROOTPATH + FIG['output_dir'])
 
 
 def save_figure(fig, name, formats=('pdf', 'png'), **kwargs):
     '''Save the figure in OUTPUT_DIR/name.pdf and .png, and close it'''
-    path = pathlib.Path(FIG['output_dir']) / name
+    path = OUTPUT_DIR / name
     path.parent.mkdir(parents=True, exist_ok=True)
+    # The text that goes beyond the figure is kept
+    kwargs.setdefault('bbox_inches', 'tight')
     for fmt in formats:
         fig.savefig(f'{path}.{fmt}', format=fmt, dpi=300, **kwargs)
     plt.close(fig)
     print(f'Saved {path}')
 
 
-def save_video(frames, output_path, fps):
-    '''
-    Save the frames (H, W, 3), in BGR as for OpenCV, as a mp4 video
-    Encoded in H.264 with ffmpeg when it is available (read by all the players), else in MPEG-4 with OpenCV
-    '''
-    import shutil
-    import subprocess
-    output_path = pathlib.Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    frames = [np.ascontiguousarray(frame, dtype=np.uint8) for frame in frames]
-    height, width = frames[0].shape[:2]
-
-    ffmpeg = shutil.which('ffmpeg')
-    if ffmpeg is not None and b'libx264' in subprocess.run([ffmpeg, '-hide_banner', '-encoders'], capture_output=True).stdout:
-        # The size must be even for H.264
-        command = [ffmpeg, '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{width}x{height}',
-                   '-r', str(fps), '-i', '-', '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', '-c:v', 'libx264',
-                   '-pix_fmt', 'yuv420p', '-crf', '18', str(output_path)]
-        process = subprocess.Popen(command, stdin=subprocess.PIPE)
-        for frame in frames:
-            process.stdin.write(frame.tobytes())
-        process.stdin.close()
-        if process.wait() != 0:
-            raise RuntimeError(f'ffmpeg failed to write {output_path}')
-    else:
-        import cv2
-        writer = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-        for frame in frames:
-            writer.write(frame)
-        writer.release()
-        print('ffmpeg with libx264 not found: the video is encoded in MPEG-4, which some players do not read')
-    print(f'Saved {output_path}')
-
-
-def plot_contour(ax, binary_mask, transpose=False, **kwargs):
-    '''Plot the contour of a binary mask. Returns False if the mask is empty'''
-    contours = measure.find_contours(binary_mask)
-    if len(contours) == 0:
-        return False
-    contour = contours[0]
-    if transpose:
-        ax.plot(contour[:, 0], contour[:, 1], **kwargs)
-    else:
-        ax.plot(contour[:, 1], contour[:, 0], **kwargs)
-    return True
-
-
 ##### DATASET
 
 def load_dataset(ratio_qc=RATIO_QC):
     '''
-    Table of features and gene expression of step 5 (6_results/dataset.csv)
+    Table of features and gene expression of step 5 (exp/results/dataset.csv)
     The gene expression is kept only for the cells used by the models: passing the quality control of the
     matching (ratio_qc), not on the edge, present in all the time frames, and with enough RNA (the matched cells
     with almost no RNA in every gene, below learning.min_mean_rna, are removed)
     '''
     from tools.model import mean_rna_per_gene
-    df = pd.read_csv('6_results/dataset.csv', index_col=['exp_path', 'condition', 'cell_bf'])
+    df = pd.read_csv(RESULTS_PATH + 'dataset.csv', index_col=['exp_path', 'condition', 'cell_bf'])
     bool_match = passes_ratio_qc_table(df, ratio_qc) & (df['is_on_edge'] == False) & (df['count'] == N_FRAMES) \
-                 & (mean_rna_per_gene(df) >= MIN_MEAN_RNA)
+    & (mean_rna_per_gene(df) >= MIN_MEAN_RNA)
     df.loc[~bool_match, 'Fish'] = None
     for gene in LEARNING_GENES:
         df.loc[~bool_match, f'Gene_{gene}'] = None
@@ -110,8 +73,8 @@ def load_dataset(ratio_qc=RATIO_QC):
 
 def select_features(df):
     '''The features of the live cells used by the model (same selection as in step 5)'''
-    columns_remove = [c for c in df.columns \
-                      if c.startswith(('Gene_', 'delta_z_', 'Fish', 'Distance', 'Id_2nd', 'is_on_edge', 'count', \
+    columns_remove = [c for c in df.columns
+                      if c.startswith(('Gene_', 'delta_z_', 'Fish', 'Distance', 'Id_2nd', 'is_on_edge', 'count',
                                        'BF_center_', 'traj_', 'centroid-', 'moments_', 'inertia_', 'umap'))]
     columns_remove += ['avg_speed', 'max_speed', 'speed_std', 'elongation', 'total_distance']
     return [x for x in df.columns if x not in columns_remove]
@@ -122,7 +85,7 @@ def cd8_positive(df):
     return df.index[df['Gene_CD8'] > 1]
 
 
-def add_umap_features(df, features, random_state=42):
+def add_umap_features(df, features, random_state=RANDOM_STATE):
     '''UMAP of the features of the live cells: columns umap_0 and umap_1'''
     import umap
     X = df[features].fillna(df[features].median())
@@ -130,7 +93,7 @@ def add_umap_features(df, features, random_state=42):
     return pd.concat((df, pd.DataFrame(x_transform, columns=['umap_0', 'umap_1'], index=X.index)), axis=1)
 
 
-def add_umap_genes(df, random_state=42):
+def add_umap_genes(df, random_state=RANDOM_STATE):
     '''UMAP of the gene expression of the CD8 positive cells: columns umap2_0 and umap2_1'''
     import umap
     Y = df[[f'Gene_{gene}' for gene in LEARNING_GENES]].dropna(axis=0, how='any')
@@ -139,103 +102,218 @@ def add_umap_genes(df, random_state=42):
     return pd.concat((df, pd.DataFrame(x_transform, columns=['umap2_0', 'umap2_1'], index=Y.index)), axis=1)
 
 
-##### IMAGES AND MASKS
-# Read from the example images of the figures (EXAMPLE_DIR), or from the folders of the pipeline if data_dir is null
+##### MAIN FIGURES: PANELS ASSEMBLED FROM THE FIGURES SAVED AS PNG
 
-def load_bf_tiles(condition, s, z=Z_FINETUNE, list_t=None):
-    '''BF images of the tile s for the time frames list_t. Dimension: (t,x,y)'''
-    if EXAMPLE_DIR is not None:
-        folder = EXAMPLE_DIR / 'live_tiles' / condition
-    else:
-        folder = pathlib.Path(DATA_PATH + 'Live/' + condition + '/non_merged/')
-    if list_t is None:
-        list_t = range(N_FRAMES)
-    paths = [list(folder.glob(f'*_t{str(t).zfill(2)}_s{str(s).zfill(2)}_z{str(z).zfill(2)}_ch00.tif'))[0] for t in list_t]
-    return np.asarray([tifffile.imread(p) for p in paths])
-
-
-def load_tile_masks(condition, s, z=Z_FINETUNE, list_t=None):
-    '''Masks of the tile s with the track ID of each cell, for the time frames list_t. Dimension: (t,x,y)'''
-    if list_t is None:
-        list_t = range(N_FRAMES)
-    if EXAMPLE_DIR is not None:
-        folder = EXAMPLE_DIR / 'live_tiles' / condition
-        paths = [folder / f'renamed_file_t{str(t).zfill(2)}_s{str(s).zfill(2)}_z{str(z).zfill(2)}.png' for t in list_t]
-        return np.asarray([np.asarray(Image.open(p)) for p in paths])
-    tracks, id_map = load_tracks(ROOTPATH, EXP_PATH, condition), load_global_id_map(ROOTPATH, EXP_PATH, condition)
-    return np.asarray([load_tracked_tile_mask(ROOTPATH, EXP_PATH, condition, t, s, tracks, id_map, z=z) for t in list_t])
+def save_through_local_file(fig, output_path, dpi):
+    '''Saves the figure as output_path.png and .pdf, written first in a local temporary folder then copied: writing
+    large files directly on a network folder can fail when the file is closed (e.g. when it is open in a viewer)'''
+    import os
+    import shutil
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        for fmt in ['png', 'pdf']:
+            local = pathlib.Path(folder) / f'figure.{fmt}'
+            fig.savefig(local, dpi=dpi)
+            # Copied next to the destination, then renamed onto it (the destination is never opened for writing)
+            destination = pathlib.Path(f'{output_path}.{fmt}')
+            temporary = destination.with_name(destination.name + '.tmp')
+            shutil.copyfile(local, temporary)
+            os.replace(temporary, destination)
 
 
-def load_merged_bf(condition, t, z):
-    '''Merged BF image of the time frame t and the z slice z'''
-    if EXAMPLE_DIR is not None:
-        folder = EXAMPLE_DIR / 'live_merged' / condition
-    else:
-        folder = pathlib.Path(DATA_PATH + 'Live/' + condition + '/')
-    path = list(folder.glob(f'*_t{str(t).zfill(2)}_z{str(z).zfill(2)}_ch00.tif'))[0]
-    return tifffile.imread(path)
+def copy_panels(output_path, panel_paths, panels_dir):
+    '''Copies the figure output_path (.png and .pdf) and the files of its panels in panels_dir, each panel file
+    preceded by its letter. panel_paths: list of (letter, image paths)'''
+    import shutil
+    panels_dir = pathlib.Path(panels_dir)
+    panels_dir.mkdir(parents=True, exist_ok=True)
+    for fmt in ['png', 'pdf']:
+        shutil.copyfile(f'{output_path}.{fmt}', panels_dir / f'{pathlib.Path(output_path).name}.{fmt}')
+    for letter, paths in panel_paths:
+        for path in map(pathlib.Path, paths):
+            for source in [path, path.with_suffix('.pdf')]:
+                if source.exists():
+                    shutil.copyfile(source, panels_dir / (f'{letter}_{source.name}' if letter else source.name))
+    print(f'Figure and panels copied in {panels_dir}')
 
 
-def load_merged_mask(condition, t):
-    '''Global mask of the time frame t, with the track ID of each cell'''
-    if EXAMPLE_DIR is not None:
-        return np.asarray(Image.open(EXAMPLE_DIR / 'live_merged' / condition / f'seg_movie_merged_t{str(t).zfill(2)}_cp_mask.png'))
-    return load_tracked_mask(ROOTPATH, EXP_PATH, condition, t, load_tracks(ROOTPATH, EXP_PATH, condition))
+def compose_grid(panels, output_path, font_size=7, dpi=600, letter_size=12, letter_space=0.18, panels_dir=None):
+    '''
+    Assembles figures saved as PNG into one figure on a grid of square cells, with a letter on each panel.
+    panels: list of (letter, image paths stacked from top to bottom, column, row, width, height[, centre]), the position
+    and the size in cells of the grid; centre=True centres the panel vertically in its cells, its letter just above it. A cell is PANEL_UNIT inches (tools/style.py) at the size the panels are drawn,
+    multiplied by font_size / base font (10 pt): a panel drawn with the size of its cells has its text at font_size pt.
+    Each panel keeps its proportions and is fitted in its cells; the letter_space inches above each row of cells hold
+    the letters. A panel whose images are missing is left blank, with its letter.
+    Saved as output_path.png and output_path.pdf; panels_dir: see copy_panels
+    '''
+    from matplotlib.image import imread
+    unit = PANEL_UNIT * font_size / FONTS['base']
+    n_cols = max(p[2] + p[4] for p in panels)
+    n_rows = max(p[3] + p[5] for p in panels)
+    width, height = n_cols * unit, n_rows * (unit + letter_space)
+    fig = plt.figure(figsize=(width, height))
+    for letter, paths, x, y, w, h, *centre in panels:
+        left, top = x * unit, height - y * (unit + letter_space)
+        images = []
+        for path in paths:
+            if pathlib.Path(path).exists():
+                images.append((imread(path), Image.open(path).info.get('dpi', (dpi, dpi))[0]))
+            else:
+                print(f'Missing panel image: {path}')
+        if not images:
+            fig.text((left + 0.02) / width, (top - 0.01) / height, letter, fontsize=letter_size, fontweight='bold',
+                     va='top', ha='left', zorder=10)
+            continue
+        # Size of the images at the size they were drawn (inches), stacked; fitted in the cells of the panel
+        natural_width = max(im.shape[1] / d for im, d in images)
+        natural_height = sum(im.shape[0] / d for im, d in images)
+        box_width, box_height = w * unit, h * unit + (h - 1) * letter_space
+        scale = min(box_width / natural_width, box_height / natural_height)
+        print(f'Panel {letter}: scaled by {scale:.2f}, base font of {FONTS["base"] * scale:.1f} pt')
+        if centre and centre[0]:
+            # Centred vertically: the space left in the cells is shared above and below, the letter moves with it
+            top -= (box_height - natural_height * scale) / 2
+        fig.text((left + 0.02) / width, (top - 0.01) / height, letter, fontsize=letter_size, fontweight='bold',
+                 va='top', ha='left', zorder=10)
+        y_image = top - letter_space
+        for image, d in images:
+            image_width, image_height = image.shape[1] / d * scale, image.shape[0] / d * scale
+            ax = fig.add_axes([left / width, (y_image - image_height) / height, image_width / width, image_height / height])
+            ax.imshow(image)
+            ax.axis('off')
+            y_image -= image_height
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_through_local_file(fig, output_path, dpi)
+    plt.close(fig)
+    print(f'Saved {output_path} ({width:.1f} x {height:.1f} inches)')
+    if panels_dir is not None:
+        copy_panels(output_path, [(p[0], p[1]) for p in panels], panels_dir)
 
 
-def load_fish_mip(condition, s, t, ch):
-    '''Maximum intensity projection of a FISH tile, for the round t and the channel ch'''
-    if EXAMPLE_DIR is not None:
-        return tifffile.imread(EXAMPLE_DIR / 'fish' / condition / f'mip_s{str(s).zfill(2)}_t{str(t).zfill(2)}_ch{str(ch).zfill(2)}.tif')
-    return show_mip(ROOTPATH, EXP_PATH, condition, s, t, ch)
+def compose_figure(rows, output_path, width=10, font_size=7, dpi=600, letter_size=12, letter_space=0.18, gap=0.1,
+                   panels_dir=None):
+    '''
+    Assembles figures saved as PNG into one figure, with a letter on each panel.
+    rows: list of rows. Each element of a row is a panel (letter, image paths stacked from top to bottom[, width]), or
+    a list of panels stacked from top to bottom in one column.
+    - a panel without width keeps its size (PNG pixels / dpi of the PNG) multiplied by a factor that is the same for
+      all these panels: their text, drawn with the font sizes of tools/style.py, has the same size in the figure.
+      The factor gives font_size pt to the base font (10 pt), or less if a row is wider than the figure.
+      width=None: the figure is as wide as its widest row with this factor
+    - a panel with a width (in inches of the figure) is scaled to this width: for the panels without text (images)
+    - a panel whose list of images is empty, or whose images are missing, is left blank (to be completed by hand),
+      with its letter, width inches wide (3 by default)
+    The columns of a row are spaced evenly, with at least gap inches between them. The height of a row is the one of
+    its tallest column; each panel has letter_space inches above it for its letter.
+    Saved as output_path.png and output_path.pdf. panels_dir: folder where the figure and the files of its panels
+    (PNG, and PDF when it exists) are also copied, the name of each panel file preceded by its letter
+    '''
+    from matplotlib.image import imread
+
+    def load(paths):
+        '''Images of the panel and their width in inches at their own dpi'''
+        images = []
+        for path in paths:
+            if not pathlib.Path(path).exists():
+                print(f'Missing panel image: {path}')
+                continue
+            dpi_image = Image.open(path).info.get('dpi', (dpi, dpi))[0]
+            image = imread(path)
+            images.append((image, image.shape[1] / dpi_image))
+        return images
+
+    # Each row: list of columns, each column: list of panels (letter, images, width or None)
+    columns = [[[(panel[0], load(panel[1]), panel[2] if len(panel) > 2 else None)
+                 for panel in (element if isinstance(element, list) else [element])] for element in row] for row in rows]
+
+    def natural_width(column):
+        '''Width of the column at its own size (panels without width), and the width it needs in any case'''
+        natural = max([max(w for _, w in images) for _, images, fixed in column if images and fixed is None] + [0])
+        fixed = max([fixed if fixed is not None else (0 if images else 3) for _, images, fixed in column] + [0])
+        return natural, fixed
+
+    # Common factor of the panels without width: font_size, or less to fit the widest row in the figure
+    scale = font_size / FONTS['base']
+    if width is None:
+        width = max(sum(max(n * scale, f) for n, f in map(natural_width, row)) + gap * (len(row) - 1) for row in columns)
+    for row in columns:
+        widths = [natural_width(column) for column in row]
+        natural = sum(n for n, _ in widths)
+        if natural > 0:
+            scale = min(scale, (width - sum(f for n, f in widths if n == 0) - gap * (len(row) - 1)) / natural)
+    print(f'Panels scaled by {scale:.2f}: base font of {FONTS["base"] * scale:.1f} pt in a figure {width:.1f} inches wide')
+
+    def panel_size(images, fixed):
+        '''Width and height in inches of the panel in the figure (with its letter), and the width of its images'''
+        if not images:
+            return fixed if fixed is not None else 3, letter_space + width * 0.25, []
+        widths = [fixed if fixed is not None else w * scale for _, w in images]
+        return max(widths), letter_space + sum(im.shape[0] / im.shape[1] * w
+                                               for (im, _), w in zip(images, widths)), widths
+
+    sizes = [[[panel_size(images, fixed) for _, images, fixed in column] for column in row] for row in columns]
+    heights = [max(sum(h for _, h, _ in column) for column in row) for row in sizes]
+    total_height = sum(heights)
+    fig = plt.figure(figsize=(width, total_height))
+    y = total_height
+    for row, row_sizes, height in zip(columns, sizes, heights):
+        column_widths = [max(w for w, _, _ in column) for column in row_sizes]
+        # Space left in the row, shared between the columns
+        space = (width - sum(column_widths)) / (len(row) - 1) if len(row) > 1 else 0
+        x = 0.0
+        for column, column_sizes, column_width in zip(row, row_sizes, column_widths):
+            y_panel = y
+            for (letter, images, _), (_, panel_height, widths) in zip(column, column_sizes):
+                y_image = y_panel - letter_space
+                for (image, _), image_width in zip(images, widths):
+                    image_height = image.shape[0] / image.shape[1] * image_width
+                    ax = fig.add_axes([x / width, (y_image - image_height) / total_height,
+                                       image_width / width, image_height / total_height])
+                    ax.imshow(image)
+                    ax.axis('off')
+                    y_image -= image_height
+                # Letter in the space above the images, drawn over them
+                fig.text((x + 0.02) / width, (y_panel - 0.01) / total_height, letter, fontsize=letter_size,
+                         fontweight='bold', va='top', ha='left', zorder=10)
+                y_panel -= panel_height
+            x += column_width + space
+        y -= height
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_through_local_file(fig, output_path, dpi)
+    plt.close(fig)
+    print(f'Saved {output_path}')
+    if panels_dir is not None:
+        copy_panels(output_path, [(p[0], p[1]) for row in rows
+                                  for element in row for p in (element if isinstance(element, list) else [element])],
+                    panels_dir)
 
 
-def load_fish_tile(condition, s, t, ch):
-    '''Maximum intensity projection and detected spots (z,x,y) of a FISH tile, for the round t and the channel ch'''
-    s_, t_, ch_ = str(s).zfill(2), str(t).zfill(2), str(ch).zfill(2)
-    mip = load_fish_mip(condition, s, t, ch)
-    if EXAMPLE_DIR is not None:
-        spots = np.load(EXAMPLE_DIR / 'fish' / condition / f'spots_s{s_}_t{t_}_ch{ch_}.npy')
-    else:
-        spots = np.load(DATA_PATH + 'Fish/bigfish/' + condition + f'/t{t_}_s{s_}_ch{ch_}.npy')
-    return mip, spots.astype(np.int64)
+##### FEATURES OF STEP 4.1, CONTOURS AND TRAJECTORIES
+
+def load_features(name, conditions):
+    '''
+    Table of features of step 4.1 (name: file name with {condition}, e.g. 'fourier_finetune_{condition}.csv') for
+    the conditions that are available, indexed by (condition, cell_bf, t)
+    '''
+    tables = {}
+    for condition in conditions:
+        path = pathlib.Path(DATA_PATH + 'live_cell_features/' + name.format(condition=condition))
+        if path.exists():
+            tables[condition] = pd.read_csv(path, index_col=['cell_bf', 't'])
+    return pd.concat(tables, names=['condition']).sort_index()
 
 
-def load_fish_tile_mask(condition, s):
-    '''Mask of the cells of a FISH tile'''
-    s_ = str(s).zfill(2)
-    if EXAMPLE_DIR is not None:
-        return np.asarray(Image.open(EXAMPLE_DIR / 'fish' / condition / f'mask_s{s_}.png'))
-    return tifffile.imread(DATA_PATH + 'Fish/masks/' + condition + f'/mosaic_mask_reassigned_s{s_}.tiff')
+def cell_contour(df_fourier, condition, cell_bf, n_points=128):
+    '''Contour (n_points, 2) of the cell at its first time frame, centred, reconstructed from its Fourier coefficients'''
+    import pyefd
+    coeffs = np.asarray(df_fourier.loc[(condition, cell_bf)].iloc[0]).reshape((FOURIER_ORDER, 4))
+    return pyefd.reconstruct_contour(coeffs, np.array([0, 0]), n_points)
 
 
-def load_fish_dapi_mip(condition, s):
-    '''Maximum intensity projection of the DAPI channel of a FISH tile (first round)'''
-    s_ = str(s).zfill(2)
-    if EXAMPLE_DIR is not None:
-        return tifffile.imread(EXAMPLE_DIR / 'fish' / condition / f'dapi_mip_s{s_}.tif')
-    paths = sorted(pathlib.Path(DATA_PATH + 'Fish/' + condition + '/').glob(f'*_t00_s{s_}_z*_ch02.tif'))
-    return np.max([tifffile.imread(p) for p in paths], axis=0)
-
-
-def load_clumps_thresholds(condition):
-    '''Thresholds of the clumps selected in step 2.4, indexed by (s, t, ch)'''
-    if EXAMPLE_DIR is not None:
-        path = EXAMPLE_DIR / 'fish' / condition / 'clumps_thresholds.csv'
-    else:
-        path = DATA_PATH + f'Fish/clumps_detection/{condition}_thresholds.csv'
-    return pd.read_csv(path, index_col=['s', 't', 'ch'])
-
-
-def load_overlay(condition):
-    '''Overlay of step 3: BF mask in the first channel, FISH mask in the second one, aligned'''
-    if EXAMPLE_DIR is not None:
-        return np.load(EXAMPLE_DIR / 'matching' / f'{condition}-overlay.npz')['overlay']
-    return np.load(DATA_PATH + f'alignment/{condition}-overlay.npy')
-
-
-def load_alignment(condition):
-    '''Table of the pairs of BF and FISH cells of step 3'''
-    if EXAMPLE_DIR is not None:
-        return pd.read_csv(EXAMPLE_DIR / 'matching' / f'{condition}-alignment.csv')
-    return pd.read_csv(DATA_PATH + f'alignment/{condition}-alignment.csv')
+def cell_trajectory(df_scikit, condition, cell_bf):
+    '''Trajectory of the centroid of the cell (columns centroid-0, centroid-1), starting from the origin'''
+    traj = df_scikit.loc[(condition, cell_bf), ['centroid-0', 'centroid-1']]
+    return traj - traj.iloc[0]

@@ -1,6 +1,6 @@
 # Details of the steps
 
-This file describes each step of the pipeline: the scripts, their inputs and outputs, the commands, the features and the result files. The installation, the parameters of `config.yaml`, how to run the scripts and the layout of the data are in [`../readme.md`](../readme.md).
+This file describes each step of the pipeline: the scripts, their inputs and outputs, the commands, the features and the result files. The installation, the parameters of `config.yaml`, how to run the scripts and the layout of the data are in [`../README.md`](../README.md).
 
 All the commands are run from the folder `code/`, and the paths of the files and folders of the code are given from `code/`.
 
@@ -11,8 +11,24 @@ All the commands are run from the folder `code/`, and the paths of the files and
 | [3 — Matching live and fixed cells](#step-3--matching-live-and-fixed-cells-3_match_bf_fish) | `3_match_bf_fish/` |
 | [4 — Live cell features](#step-4--live-cell-features-4_extract_features_ml) | `4_extract_features_ML/` |
 | [5 — Dataset and prediction of gene expression](#step-5--dataset-and-prediction-of-gene-expression-5_poc_activation) | `5_POC_activation/` |
-| [6 — Results](#results-6_results) | `6_results/` |
-| [7 — Figures](#step-7--figures-7_figures) | `7_figures/` |
+| [Results](#results-expresults) | `exp/results/` |
+| [6 — Main figure of the prediction](#step-6--main-figure-of-the-prediction-6_exp_figures) | `6_exp_figures/` |
+| [7 — Main figure of the control experiment](#step-7--main-figure-of-the-control-experiment-7_control_figures) | `7_control_figures/` |
+
+
+### Shared code
+
+| File | Content |
+|---|---|
+| `tools/read_yaml.py` | Reads `config.yaml` (or `config_confidential.yaml`) and exposes its parameters as constants (`ROOTPATH`, `EXP_PATH`, `CONDITION`, ...), with the shell variables `CONDITION` and `CONFIG_SET` |
+| `tools/config_to_shell.py` | Prints the parameters as shell variables, for `run.sh`, `run_control.sh` and the manual steps |
+| `tools/tools_bf.py` | Brightfield images of step 1: position of the tiles, Cellpose masks, global masks and tracks, masks with the track identifier of each cell, elliptic Fourier descriptors |
+| `tools/tools_fish.py` | smFISH images of step 2: z stacks, projections, snake pattern and mosaic of the tiles |
+| `tools/matching.py` | Step 3: translation between the two fields of view, pairs of reciprocal closest neighbours, quality control of the pairs |
+| `tools/model.py` | Step 5: families and normalisation of the features, random forest, nested cross-validation, permutation test |
+| `tools/figures.py` | Steps 6 and 7: loading of the dataset, UMAP, contours and trajectories, saving and assembly of the figures |
+| `tools/style.py` | Font and size of the panels of the figures |
+| `config_patterns/` | Snake pattern of the smFISH tiles (`5x5.npy`, default of step 2), written by `create_pattern.py` |
 
 ---
 
@@ -164,7 +180,7 @@ All tables are written in `{ROOTPATH}/{EXP_PATH}/live_cell_features/`, with one 
 
 | # | Script | Purpose | Input | Output |
 |---|---|---|---|---|
-| 4.1 | `1_hand_features_fourier_finetune.py` | Features of each tracked cell. The contour is measured on the Cellpose mask of the tile of the cell, and the other features on the global masks; both are linked to the track through the tables of step 1: elliptic Fourier descriptors of the contour (5 harmonics), scikit-image shape descriptors, overlap of the cell with itself between consecutive frames (IoU), total area explored, and cells touching the border of the field of view. | Tile masks of M1, `global_masks/`, `track/` | `fourier_finetune_{CONDITION}.csv`, `finetune_scikit_{CONDITION}.csv`, `finetune_iou_{CONDITION}.csv`, `finetune_area_explored_{CONDITION}.csv` (per cell), `is_on_edge_{CONDITION}.csv`, `finetune_tile_{CONDITION}.csv` |
+| 4.1 | `1_hand_features_fourier_finetune.py` | Features of each tracked cell. The contour is measured on the Cellpose mask of the tile of the cell, and the other features on the global masks; both are linked to the track through the tables of step 1: elliptic Fourier descriptors of the contour (5 harmonics; Kuhl and Giardina, parametrised by the arc length of the contour, computed with pyefd), scikit-image shape descriptors, overlap of the cell with itself between consecutive frames (IoU), total area explored, and cells touching the border of the field of view. | Tile masks of M1, `global_masks/`, `track/` | `fourier_finetune_{CONDITION}.csv`, `finetune_scikit_{CONDITION}.csv`, `finetune_iou_{CONDITION}.csv`, `finetune_area_explored_{CONDITION}.csv` (per cell), `is_on_edge_{CONDITION}.csv`, `finetune_tile_{CONDITION}.csv` |
 | 4.2 | `2_dynamics_features.py` | Motility and neighbourhood: exponent `alpha` of the mean squared displacement (per cell), Voronoi cell area, distance to the border, and number of neighbours within several distances (`neighbors_thresholds`). | `track/tracks.csv` | `dynamics_feats_{CONDITION}.csv` (per cell), `neighbors_feats_{CONDITION}.csv` |
 
 ```bash
@@ -176,7 +192,7 @@ python3 -m 4_extract_features_ML.2_dynamics_features
 
 The features belong to five families, defined in `tools/model.py` and used by steps 5.3 and 5.5. A feature measured at each time frame is summarised over the movie by four numbers, with the suffixes `_mean`, `_std`, `_max` and `_min`: this is the "per frame" of the column "Measured". The last column gives the number of features of the models that each row represents: 133 in total, with the current `fourier_order` (5) and `neighbors_thresholds` (5 distances). The column "Parameters" gives the parameters of `config.yaml` on which the feature depends, with their current value ("—": none). In addition, all the features depend on the number of time frames (`n_frames` = 21) and on the z plane used for the segmentation (`z_finetune` = 2).
 
-The size of the cell is carried by one feature only, its mean area. All the other lengths and areas of the shape and overlap families are expressed relative to the size of the cell: "÷ diameter" and "÷ area" in the definitions are divisions of the summary numbers by the mean equivalent diameter and by the mean area of the cell over the movie. The Fourier features are divided in step 5.1, so they are already relative to the size in `6_results/dataset.csv`; the others are stored in pixels (40× image, 0.1625 µm per pixel) in this table and divided when the models are trained (`normalize_features` in `tools/model.py`).
+The size of the cell is carried by one feature only, its mean area. All the other lengths and areas of the shape and overlap families are expressed relative to the size of the cell: "÷ diameter" and "÷ area" in the definitions are divisions of the summary numbers by the mean equivalent diameter and by the mean area of the cell over the movie. The Fourier features are divided in step 5.1, so they are already relative to the size in `exp/results/dataset.csv`; the others are stored in pixels (40× image, 0.1625 µm per pixel) in this table and divided when the models are trained (`normalize_features` in `tools/model.py`).
 
 **Size** (1 feature)
 
@@ -231,7 +247,7 @@ The Fourier coefficients are also normalised for the rotation and the starting p
 | `distance_boundary` | Distance from the centroid to the border of its Voronoi cell | per frame | 4 (4 summaries) | `min_cell_area` = 500 |
 | `n_neigh_thresh_d` | Number of cells closer than *d* pixels (`neighbors_thresholds`) | per frame | 20 (5 distances × 4 summaries) | `neighbors_thresholds` = 50, 100, 150, 200, 250 |
 
-Other columns of `6_results/dataset.csv` are not used by the models: the position of the cell (`centroid-*`), the image moments and inertia tensor (`moments_*`, `inertia_*`), `avg_speed`, `max_speed` and `speed_std` (same information as `delta_distance`), `total_distance` (length of the trajectory: for a cell present in all the frames, it is `delta_distance_mean` multiplied by the number of displacements, so the same information), `elongation` of the trajectory, and the columns of the matching and of the gene expression.
+Other columns of `exp/results/dataset.csv` are not used by the models: the position of the cell (`centroid-*`), the image moments and inertia tensor (`moments_*`, `inertia_*`), `avg_speed`, `max_speed` and `speed_std` (same information as `delta_distance`), `total_distance` (length of the trajectory: for a cell present in all the frames, it is `delta_distance_mean` multiplied by the number of displacements, so the same information), `elongation` of the trajectory, and the columns of the matching and of the gene expression.
 
 ---
 
@@ -239,12 +255,12 @@ Other columns of `6_results/dataset.csv` are not used by the models: the positio
 
 | # | Script | Purpose | Input | Output |
 |---|---|---|---|---|
-| 5.1 | `1_concatenate_features.py` | Builds the dataset, one row per live cell. Time series are summarised by their mean, standard deviation, maximum and minimum, and trajectory statistics are added (distance, displacement, straightness, turning angle). All the live cells are kept: the features are joined with the matching table and the gene expression when the cell has a smFISH partner, and these columns are empty otherwise, so that the table can also be used for analyses of the live cells alone. Cells on the border of the field of view and cells with a displacement above 200 pixels between two frames are removed. Runs over the experiments and conditions of the `learning` section of `config.yaml` (`3-24H` and `4-24H`). | Tables of steps 2, 3 and 4 | `6_results/dataset.csv` |
-| 5.2 | `2_concatenate_gene_expr.py` | Gathers the gene expression tables of all experiments and conditions in one file. | `Fish/{CONDITION}.csv` | `6_results/all_gene_profile.csv` |
-| 5.3 | `3_model.py` | Keeps reliably matched cells: pairs passing the quality control of the matching, present in the 21 frames, not on the border, with at least `min_mean_rna` RNA per gene on average, and CD8 positive. The quality control uses a single ratio `ratio_qc` between 0 and 1 (larger is stricter): a pair is kept if `1 − d / d₂ ≥ ratio_qc` on both sides, where `d` is the distance between the two cells and `d₂` the distance to the second nearest candidate, so that a pair is kept only when it is unambiguous. For each gene, binarises expression at a fixed threshold (`gene_thresholds`) and trains a random forest. The model is evaluated by nested stratified 5-fold cross-validation: the hyperparameters (randomised search), the median used for the missing values and the scaling of the features are all determined on the training cells of each fold, and the scores are computed on the held-out cells. Each score is reported with a 95 % confidence interval (bootstrap of the cells), and compared with the scores obtained with shuffled labels (permutation test, p-values corrected for the number of genes). The analysis is repeated on the cells with the lowest and highest expression only. | `6_results/dataset.csv` | `6_results/performances_24H.csv`, `6_results/performances_24H_extreme.csv`, `6_results/prediction_{gene}.csv`, `6_results/feature_importances.csv` |
-| 5.4 | `4_figures_performances.py` | Draws the figures of the performance from the tables of 5.3, without retraining: size of the dataset of each gene, balanced accuracy in the nested cross-validation, with a star for the genes predicted significantly better than chance. | `6_results/performances_24H.csv`, `6_results/performances_24H_extreme.csv` | `6_results/dataset_size.png`, `6_results/performance.png` |
-| 5.5 | `5_model_feature_groups.py` | Measures what each family of features predicts (families described in step 4). The same prediction as 5.3 (same cells, random forest, nested cross-validation) is trained nine times for each gene: with each family alone (size, shape, motility, overlap, neighbourhood), then with size + motility, size + shape, size + motility + shape, and all the families together. The models are tested on the same cells and folds, and each score is given with a 95 % confidence interval (bootstrap of the cells). Each model is also compared with chance by the permutation test of 5.3, corrected for the number of genes (columns `p_value`, `q_value` and `significant`). | `6_results/dataset.csv` | `6_results/performances_feature_groups.csv` |
-| 5.6 | `6_figures_feature_groups.py` | Draws the figures of 5.5, without retraining: balanced accuracy of each set of features, with a star when the model is significantly better than chance. | Table of 5.5 | `6_results/performance_feature_groups.png` |
+| 5.1 | `1_concatenate_features.py` | Builds the dataset, one row per live cell. Time series are summarised by their mean, standard deviation, maximum and minimum, and trajectory statistics are added (distance, displacement, straightness, turning angle). All the live cells are kept: the features are joined with the matching table and the gene expression when the cell has a smFISH partner, and these columns are empty otherwise, so that the table can also be used for analyses of the live cells alone. Cells on the border of the field of view and cells with a displacement above 200 pixels between two frames are removed. Runs over the experiments and conditions of the `learning` section of `config.yaml` (`3-24H` and `4-24H`). | Tables of steps 2, 3 and 4 | `exp/results/dataset.csv` |
+| 5.2 | `2_concatenate_gene_expr.py` | Gathers the gene expression tables of all experiments and conditions in one file. | `Fish/{CONDITION}.csv` | `exp/results/all_gene_profile.csv` |
+| 5.3 | `3_model.py` | Keeps reliably matched cells: pairs passing the quality control of the matching, present in the 21 frames, not on the border, with at least `min_mean_rna` RNA per gene on average, and CD8 positive. The quality control uses a single ratio `ratio_qc` between 0 and 1 (larger is stricter): a pair is kept if `1 − d / d₂ ≥ ratio_qc` on both sides, where `d` is the distance between the two cells and `d₂` the distance to the second nearest candidate, so that a pair is kept only when it is unambiguous. For each gene, binarises expression at a fixed threshold (`gene_thresholds`) and trains a random forest. The model is evaluated by nested stratified 5-fold cross-validation: the hyperparameters (randomised search), the median used for the missing values and the scaling of the features are all determined on the training cells of each fold, and the scores are computed on the held-out cells. Each score is reported with a 95 % confidence interval (bootstrap of the cells), and compared with the scores obtained with shuffled labels (permutation test, p-values corrected for the number of genes). The analysis is repeated on the cells with extreme expression only: the `n_extreme` lowest expressing cells of the low class and the `n_extreme` highest expressing cells of the high class (a class with fewer cells is kept whole). | `exp/results/dataset.csv` | `exp/results/performances_24H.csv`, `exp/results/performances_24H_extreme.csv`, `exp/results/prediction_{gene}.csv`, `exp/results/feature_importances.csv` |
+| 5.4 | `4_figures_performances.py` | Draws the figures of the performance from the tables of 5.3, without retraining: size of the dataset of each gene, balanced accuracy in the nested cross-validation, with a star for the genes predicted significantly better than chance. | `exp/results/performances_24H.csv`, `exp/results/performances_24H_extreme.csv` | `exp/results/figures/dataset_size.png`, `exp/results/figures/performance.png` |
+| 5.5 | `5_model_feature_groups.py` | Measures what each family of features predicts (families described in step 4). The same prediction as 5.3 (same cells, random forest, nested cross-validation) is trained nine times for each gene: with each family alone (size, shape, motility, overlap, neighbourhood), then with size + motility, size + shape, size + motility + shape, and all the families together. The models are tested on the same cells and folds, and each score is given with a 95 % confidence interval (bootstrap of the cells). Each model is also compared with chance by the permutation test of 5.3, corrected for the number of genes (columns `p_value`, `q_value` and `significant`). | `exp/results/dataset.csv` | `exp/results/performances_feature_groups.csv` |
+| 5.6 | `6_figures_feature_groups.py` | Draws the figures of 5.5, without retraining: balanced accuracy of each set of features, with a star when the model is significantly better than chance. | Table of 5.5 | `exp/results/figures/performance_feature_groups.png` |
 
 ```bash
 python3 -m 5_POC_activation.1_concatenate_features
@@ -259,7 +275,7 @@ python3 -m 5_POC_activation.6_figures_feature_groups
 
 | Option | Effect | Suffix of the output files |
 |---|---|---|
-| `--quick` | 3 hyperparameter combinations, 20 shuffles and 100 resamplings instead of the values of `config.yaml`. To check that everything runs; the p-values are not meaningful | none: overwrites the standard results |
+| `--quick` | 3 hyperparameter combinations, 20 shuffles and 100 resamplings instead of the values of `config.yaml`. To check that everything runs; the p-values are not meaningful | none, but saved in `exp/results/quick/`: the standard results are kept |
 | `--normalize_target` | Predicts the expression adjusted for the size of the cell: the number of RNA is divided by the mean area of the live cell relative to the median area, and the threshold of the gene is applied to this adjusted number | `_normalized_target` |
 
 `5_model_feature_groups.py` takes `--quick` only.
@@ -269,66 +285,108 @@ The trainings of steps 5.3 and 5.5 are independent of each other, so they are ru
 
 ---
 
-## Results (`6_results/`)
+## Results (`exp/results/`)
 
-The tables are in the repository. The figures (`*.png`) are generated by steps 5.4 and 5.6 and are not tracked by git.
+The repository contains `dataset.csv`, `all_gene_profile.csv` and the three `performances_*.csv` tables: they are the inputs of the figures and the numbers of the paper. `prediction_{gene}.csv` and `feature_importances.csv` are written by step 5.3 when it is run again, and the figures (`figures/*.png`) by steps 5.4 and 5.6; they are not tracked by git.
 
 | File | Content |
 |---|---|
 | `dataset.csv` | One row per live cell: features of step 4 and, for the cells with a smFISH partner, matching information of step 3 and gene expression of step 2. Index: `exp_path`, `condition`, `cell_bf`. |
 | `all_gene_profile.csv` | Gene expression of every smFISH cell, for all experiments and conditions. |
 | `performances_24H.csv` | Per gene: AUC, balanced accuracy, true positive and true negative rates on the training and test folds, and class sizes, averaged over the folds of the nested cross-validation; 95 % confidence intervals (`*_ci_low`, `*_ci_high`); balanced accuracy with shuffled labels (`Balanced_Accuracy_permuted`, mean, and `_permuted_95`, 95th percentile), `p_value` of the permutation test, `q_value` (p-value corrected for the number of genes, Benjamini–Hochberg) and `significant` (better than chance: `q_value` below 0.05). |
-| `performances_24H_extreme.csv` | Same metrics when only the cells with the lowest and highest expression are kept. |
+| `performances_24H_extreme.csv` | Same metrics on the cells with extreme expression: the `n_extreme` cells with the lowest expression among the cells of the low class, and the `n_extreme` cells with the highest expression among the cells of the high class. A class with fewer than `n_extreme` cells is kept whole. |
 | `prediction_{gene}.csv` | For every live cell: class predicted by the model of the gene (0: low, 1: high), measured expression and true class when the cell is reliably matched. For these cells, the prediction is the one made when the cell was in a test fold. |
 | `feature_importances.csv` | Importance of each feature in the random forest of each gene, averaged over the folds. |
-| `dataset_size.png` | Number of cells with a low and with a high expression of each gene, in the analysis on all the cells. |
-| `performance.png` | Balanced accuracy per gene in the nested cross-validation, for all the cells and for the extreme cells, with its 95 % confidence interval. Star: significantly better than chance (permutation test, corrected for the number of genes). |
+| `figures/dataset_size.png` | Number of cells with a low and with a high expression of each gene, in the analysis on all the cells. |
+| `figures/performance.png` | Balanced accuracy per gene in the nested cross-validation, for all the cells and for the extreme cells, with its 95 % confidence interval. Star: significantly better than chance (permutation test, corrected for the number of genes). |
 | `performances_feature_groups.csv` | Per gene and per set of features (each family alone and their combinations): number of features, class sizes, balanced accuracy and AUC with their 95 % confidence intervals, `p_value` of the permutation test, `q_value` (corrected for the number of genes) and `significant` (`q_value` below 0.05). |
-| `performance_feature_groups.png` | Balanced accuracy per gene with each set of features. Star: significantly better than chance. |
+| `figures/performance_feature_groups.png` | Balanced accuracy per gene with each set of features. Star: significantly better than chance. |
 
 ---
 
-## Step 7 — Figures (`7_figures/`)
+## Step 6 — Main figure of the prediction (`6_exp_figures/`)
 
-Each script generates the figures of one part of the pipeline from the outputs of the previous steps, and saves them as PDF and PNG in `7_figures/output/`. The scripts only read the data: nothing is recomputed, except the UMAP embeddings and the correlations.
+The main figure of the prediction of the gene expression is drawn by four scripts and two scripts of step 5, and saved as PDF and PNG in `exp/results/figures/`. The scripts only read the tables of `exp/results/` and of step 4.1: nothing is recomputed, except the UMAP embeddings (fixed seed, identical from one run to the next). The parameters are in `6_exp_figures/config_figures.yaml`, and the shared code (loading of the data, saving and assembly of the figures) in `tools/figures.py`.
 
-The parameters specific to the figures are in `7_figures/config_figures.yaml`: source of the images, condition and tiles shown, crops, example cells. Cell identifiers left to `null` are chosen automatically, so that the figures can be generated for any experiment. The shared code (loading of the data, saving of the figures) is in `tools/figures.py`.
-
-| # | Script | Figures | Input |
+| # | Script | Figure | Input |
 |---|---|---|---|
-| 7.1 | `1_segmentation.py` | Contour and identifier of the tracked cells on a BF tile, for all the time frames and for a subset; contours colored by the prediction of the model for one gene | BF tiles, tile masks and tracks of step 1, `6_results/prediction_{gene}.csv` |
-| 7.2 | `2_fish_rna.py` | Projection of each gene for a non-activated and an activated tile, without and with the detected spots, the contour of the cells and the spot count; segmentation of the smFISH cells on the projection of all genes and DAPI | smFISH tiles, spots and masks of step 2 |
-| 7.3 | `3_clumps.py` | Detection of the fluorescent aggregates and cells excluded for the gene | smFISH tile and mask, thresholds of 2.4 |
-| 7.4 | `4_matching.py` | Segmentations of the two modalities and pairs kept after the quality control; alignment map and overlay; number of pairs as a function of `ratio_qc`; number of cells at each step (`cell_counts.csv`) | Overlay and table of step 3, `6_results/dataset.csv` |
-| 7.5 | `5_live_features.py` | Voronoi diagram; number of neighbours within several distances; trajectory, path length and explored area of a cell; the cell at each time frame | Merged BF frame and mask, BF tiles, tile masks and tracks of step 1 |
-| 7.6 | `6_fourier_features.py` | Reconstruction of the contour of a cell with an increasing number of harmonics; magnitude and elliptic area of each harmonic | Tile masks and tracks of step 1 |
-| 7.7 | `7_gene_thresholds.py` | Distribution of the expression of each gene in the non-activated and activated conditions, with the threshold between low and high expression | `6_results/all_gene_profile.csv` |
-| 7.8 | `8_umap.py` | UMAP of the live cell features, colored by features and by gene expression, and with a thumbnail of each cell; UMAP of the gene expression, colored by gene expression and by features | `6_results/dataset.csv`, single-cell movies of 1.4 |
-| 7.9 | `9_correlations.py` | Clustered matrix of the significant Spearman correlations (false discovery rate below 5 %) between features and genes, for all the cells and for the cells with extreme expression | `6_results/dataset.csv` |
-| 7.10 | `10_model_performance.py` | Class sizes, true positive rate, true negative rate and balanced accuracy per gene, for all the cells and for the cells with extreme expression | `6_results/performances_24H.csv`, `performances_24H_extreme.csv` |
-| 7.11 | `11_example_cells.py` | BF images over time of a cell with high and a cell with low expression of a gene; their position in the UMAP; their features compared with the distribution over all cells | `6_results/dataset.csv`, merged BF frames, `global_masks/`, `track/` |
-| 7.12 | `12_contours_trajectories.py` | Contours and trajectories of cells by condition, and for the cells with the lowest and highest expression of each gene | `6_results/dataset.csv`, tables of 4.1 |
-| 7.13 | `13_video.py` | Video of one field of view: live timelapse with tracked contours, DAPI with the contours of the matched fixed cells, smFISH projection, and matching | Merged BF frames, `global_masks/`, `track/`, smFISH images and masks, overlay and table of step 3 |
-| 7.14 | `14_video_tile.py` | Video of the timelapse of one BF tile, with the mask and the identifier of each tracked cell. `--condition` and `--tile` select the tile | BF tiles, tile masks and tracks of step 1 |
-| 7.15 | `15_cell_flow.py` | Flow (Sankey) diagram of the number of live cells at each step, for each activated condition, with flows proportional to the number of cells and the cells lost at each step shown leaving: tracked over the whole movie, in the field of view of the smFISH image, matched to a smFISH cell, passing the quality control, with at least `min_mean_rna` RNA per gene on average, CD8 positive (`cell_flow.csv`) | `6_results/dataset.csv`, overlay of step 3 |
-| 7.16 | `16_size_expression.py` | Scatter plots of the mean area of the live cell against the expression of each gene, for the cells used by the models: number of RNA (`size_expression`), and number of RNA normalized by the size of the cell, as with `3_model.py --normalize_target` (`size_expression_normalized`). Each panel gives the Spearman correlation and the threshold of the gene | `6_results/dataset.csv` |
+| 5.4 | `5_POC_activation/4_figures_performances.py` | Panel g: number of cells with a low and a high expression of each gene, and balanced accuracy per gene for all the cells and for the extreme cells | `exp/results/performances_24H.csv`, `performances_24H_extreme.csv` |
+| 5.6 | `5_POC_activation/6_figures_feature_groups.py` | Panel h: balanced accuracy per gene with each set of features | `exp/results/performances_feature_groups.csv` |
+| 6.1 | `1_gene_thresholds.py` | Panel f: distribution of the expression of each gene in the non-activated and activated conditions, with the threshold between low and high expression | `exp/results/all_gene_profile.csv` |
+| 6.2 | `2_umap.py` | Panels a to e: UMAP of the live cell features, coloured by four features, by the expression of each gene, and with a thumbnail of each cell; UMAP of the gene expression, coloured by the genes and by four features | `exp/results/dataset.csv`, `exp/thumbnails/` |
+| 6.3 | `3_contours_trajectories_grid.py` | Panel i: trajectories and contours of the cells with the lowest and the highest expression of CORO1A, GZMB and TNF (`contours_trajectories.grid_genes`). The panels of the trajectories, and those of the contours, share the same limits, set by default so that all the cells fit | `exp/results/dataset.csv`, `exp/live_cell_features/fourier_finetune_*.csv` and `finetune_scikit_*.csv` |
+| 6.4 | `4_main_figure_prediction.py` | Main figure, assembled from the PNG of the panels above (`exp/results/figures/main/main_figure_prediction`) | Figures of 5.4, 5.6, 6.1, 6.2 and 6.3 |
 
 ```bash
-bash 7_figures/run.sh
-# or one script: python3 -m 7_figures.1_segmentation
+bash 6_exp_figures/run.sh               # the six scripts above, in order
+python3 -m 6_exp_figures.2_umap         # a single script
 ```
 
-### Example images
+**Thumbnails.** `exp/thumbnails/{CONDITION}.npz` holds the first frame of the single-cell movie of each cell (step 1.4), with the contrast of the figure, in 8 bits, so that the UMAP with the cell images can be drawn without the movies (about 10 MB instead of 150 MB). They are used when `data_dir` is set in `config_figures.yaml` (default). With `data_dir: null`, the frames are read from the movies of step 1.4 instead, which gives the same figure. The thumbnails are written again from the movies with:
 
-The images needed for the figures of the paper are provided in `7_figures/data/`, so that the figures can be generated without the raw data. They are used when `data_dir` is set in `config_figures.yaml` (default). With `data_dir: null`, the images are read from the folders of the pipeline (`rootpath` and `exp_path` of `config.yaml`) instead.
+```bash
+python3 -m 6_exp_figures.2_umap --export_thumbnails ../exp/thumbnails/   # with data_dir: null
+```
 
-| Folder | Content | Used by |
+---
+
+## Step 7 — Main figure of the control experiment (`7_control_figures/`)
+
+In the control experiment, the cells are stained with two dyes, which gives each cell a colour barcode (positive or negative in each channel). The barcode is read before the movie and again after fixation: a live cell and the fixed cell it is paired with must have the same barcode, which measures the accuracy of the tracking and of the matching. Two densities of cells are imaged; the panels of a single density show the high density (`--canal 2`; `--canal 05` for the low density).
+
+The images of the control experiment were analysed with the scripts of steps 1 and 3 by `run_control.sh` (see below), then the outputs needed by the figures were gathered in `control/` (`control.exp_path` of `config.yaml`). This folder is what the figure scripts read; the raw images are not included:
+
+| Folder | Content |
+|---|---|
+| `control/figures_input/canal2/`, `canal05/` | For each density (high, low): barcode intensities of each cell before the movie and after fixation (`*_signal_per_object.csv`), tracks and motion of the cells of the movie and of the movie after UV, pairs of cells between the acquisitions (`match_step_*`), and the masks and frame of the movies drawn in the panels |
+| `control/alignment/highdensity_barcode_afterUV/` | Centroids and parameters of the alignment of the last frame of the movie on the barcode after fixation |
+| `control/BarcodeAfterUV/canal_highdensity/global_masks/` | Mask of the fixed cells, for the size of their field of view |
+
+Scripts 1 to 7 draw one panel each, in the order of the panels (saved in `control/results/figures/`, `canal2/` for the high density), and script 8 assembles them:
+
+| # | Script | Panel |
 |---|---|---|
-| `data/live_tiles/{CONDITION}/` | One BF tile (z plane 02) at the 21 time frames, and its masks with the track identifiers; the first frame of a second tile, inside the smFISH field of view, for the figure with the prediction | 7.1, 7.5, 7.6 |
-| `data/live_merged/{CONDITION}/` | Part of the merged BF image of the first frame, and its mask | 7.5 |
-| `data/fish/{CONDITION}/` | For one smFISH tile: projection and detected spots of each gene, mask of the cells, DAPI projection, thresholds of the aggregates | 7.2, 7.3 |
-| `data/matching/` | For each activated condition: overlay of the two segmentations after alignment, and table of the pairs | 7.4, 7.15 |
+| 7.1 | `1_sticking_fraction_after_uv.py` | b) Fraction of the cells that stay put over time after the photo-immobilization |
+| 7.2 | `2_trajectories_contours_after_uv.py` | c) Trajectories and contours of the cells during the movie, right after and 30 min after the immobilization |
+| 7.3 | `3_alignment_search.py` | d) Search of the translation aligning the last frame of the movie on the barcode after fixation: mean distance to the nearest cell over a coarse, then a refined grid of translations |
+| 7.4 | `4_matching_live_fixed.py` | e) Segmentation of the last frame of the movie (green), of the fixed cells aligned on it (red), and their overlay with the pairs passing the quality control (`--ratio_qc`, 0.6 by default) |
+| 7.5 | `5_confusion_matrices.py` | f) Barcode of the live cell against barcode of the fixed cell: confusion matrices without quality control and with `ratio_qc` ≥ 0.3 and ≥ 0.6, one row per density |
+| 7.6 | `6_accuracy_vs_qc_ratio.py` | g) Balanced accuracy of the barcodes, and number of pairs, as a function of `ratio_qc`, for both densities |
+| 7.7 | `7_flux_diagram_cells.py` | h) Flux diagram: cells tracked over the movie → alive → with a barcode → paired after fixation → passing the quality control → same or different barcode |
+| 7.8 | `8_main_figure_control.py` | Main figure, assembled from the panels above (`control/results/figures/main_figure_control`) |
 
-Scripts 7.7 to 7.10 only read the tables of `6_results/`. Scripts 7.11 to 7.13 need the whole field of view over time or the feature tables of step 4, which are not provided: they are run with `data_dir: null`.
+```bash
+bash 7_control_figures/run.sh                                          # the eight scripts above, in order
+python3 -m 7_control_figures.5_confusion_matrices --qc_values 0.3 0.6  # a single script (-h lists the options)
+```
 
-The UMAP embeddings use a fixed random seed, so the figures are identical from one run to the next.
+The scripts share `_common.py` (location of the data, options common to every script, tables used by several figures), `_illustration_lib.py` (barcodes of the paired live and fixed cells, panels e to g), `_attachment_lib.py` (motion of the cells after UV, panels b and c), `pipeline/tracking_accuracy_step0_step4.py` (chain of the cells from the barcode before the movie to the barcode after fixation, panel h) and `pipeline/helpers.py` (loading and alignment of the masks). The barcode is called positive for the half of the cells with the highest 90th percentile in each channel (default of the figures).
+
+### Analysis of the control experiment (`run_control.sh`, for information)
+
+`run_control.sh` produced the content of `control/` from the raw images of the control experiment, which are not in this repository: it is provided for information and cannot be run from the repository. It expects the raw images in the folder of the control experiment (`control.exp_path`):
+
+| Folder | Acquisition | Tiles |
+|---|---|---|
+| `BarcodeBeforeTimelapse/canal_{density}/` | Colour barcode before the movie (ch00 brightfield, ch01 and ch02 the two dyes) | 4 × 4 |
+| `Live/canal_{density}/` | Movie, 21 frames, 4 planes | 4 × 4 |
+| `BarcodeAfterUV/canal_{density}/` | Colour barcode after fixation, other objective (scale 40/63) | 8 × 8 (high density), 7 × 8 (low density) |
+| `LongMovieAfterUV/canal_highdensity/` | Movie after UV, 172 frames | 1 |
+
+`density` is `highdensity` or `lowdensity`. The images are analysed with the scripts of steps 1 and 3, unchanged, in the folder `analysis/` of the experiment; the parameters of each acquisition (number of frames, tiles) replace the ones of `config.yaml` for each run (`CONFIG_SET`, see `tools/read_yaml.py`):
+
+| # | Script | Purpose |
+|---|---|---|
+| 1 | `7_control_figures/analysis/1_link_images.py` | Links the images in `analysis/Live/{acquisition}/non_merged/` with the names read by step 1 (only the plane z02 of the movies). One acquisition per `CONDITION`: `step0_{density}` (barcode before the movie), `step1_{density}` (movie), `afterUV_{density}` (barcode after fixation), `step3_{density}` (movie after UV). The Cellpose masks already computed for these images are linked too |
+| M1 | finetuned Cellpose | Segmentation of every tile (off by default: `SEGMENTATION=false` reuses masks already computed, linked by `1_link_images.py`) |
+| 1.2 | `1_bf_analysis/2_merge_masks.py` | Global mask of each acquisition and frame |
+| 1.3 | `1_bf_analysis/3_track_cells.py` | Tracking of the movies; and barcode before the movie ↔ first frame of the movie, tracked as a movie of two frames |
+| 1.1 | `1_bf_analysis/1_stitch_blend.py` | Stitched images of the movie (high density) |
+| 3.1 | `3_match_bf_fish/1_live_fish_matching.py` | Last frame of the movie ↔ barcode after fixation, as for the smFISH (the mask after fixation in place of the smFISH mask); last frame of the movie ↔ first frame of the movie after UV (scale 1, wider translation search) |
+| 2 | `7_control_figures/analysis/2_prepare_figure_inputs.py` | Builds `figures_input/` from the outputs above: links to the images and masks, tracks of step 1.3 and pairs of step 3.1 converted to the tables read by the figures |
+| — | `7_control_figures/pipeline/barcode_intensities.py` | Barcode of each cell: 90th percentile of ch01 and ch02 in its mask, before the movie and after fixation (`*_signal_per_object.csv`) |
+| — | `7_control_figures/pipeline/track_dynamics.py` | Motion and shape of each tracked cell over the movie, and over successive windows of 21 frames of the movie after UV (`*_track_dynamics*.csv`, `*_track_per_frame.csv`) |
+| — | `7_control_figures/run.sh` | Main figure of the control experiment |
+
+The tracks and the pairs of cells used by the figures are therefore those of steps 1.3 and 3.1 of the pipeline. The folder `alignment/` (centroids and translation read by `3_alignment_search.py`) is not written by `run_control.sh`.
+

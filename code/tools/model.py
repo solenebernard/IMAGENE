@@ -2,6 +2,7 @@
 Features and model shared by the scripts of 5_POC_activation
 '''
 
+import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
@@ -31,12 +32,25 @@ def mean_rna_per_gene(df):
     return genes.sum(axis=1) / n_genes.where(n_genes > 0)
 
 
+def extreme_cells(y, threshold, n_extreme):
+    '''
+    Cells with extreme expression of a gene: the n_extreme cells with the lowest expression among the cells of the low
+    class (expression below the threshold of the gene), and the n_extreme cells with the highest expression among the
+    cells of the high class. A class with fewer than n_extreme cells is kept whole, so the two classes can differ in size.
+    Returns the labels (0: low, 1: high) of these cells
+    '''
+    low = y[y < threshold].sort_values(kind='stable')
+    high = y[y >= threshold].sort_values(kind='stable')
+    low, high = low.index[:n_extreme], high.index[len(high) - min(n_extreme, len(high)):]
+    return pd.Series([0] * len(low) + [1] * len(high), index=low.append(high), dtype=int)
+
+
 def select_feature_columns(df):
     '''Columns of the dataset used as features by the models'''
     # Not features: genes, matching, position of the cell in the field of view
-    columns_remove = [c for c in df.columns \
-                      if c.startswith(('Gene_', 'delta_z_', 'Fish', \
-                          'Distance', 'Id_2nd', 'is_on_edge', 'count', 'BF_center_', 'traj_', 'centroid-'))]
+    columns_remove = [c for c in df.columns
+                      if c.startswith(('Gene_', 'delta_z_', 'Fish',
+                                       'Distance', 'Id_2nd', 'is_on_edge', 'count', 'BF_center_', 'traj_', 'centroid-'))]
     columns_remove += [c for c in df.columns if c.startswith(('moments_', 'inertia_'))]
     columns_remove += ['avg_speed', 'max_speed', 'speed_std', 'elongation']
     # Same information as delta_distance_mean: for a cell present in all the time frames, the length of the
@@ -77,14 +91,14 @@ def normalize_features(features):
     features = features.copy()
     diameter, area = features['equivalent_diameter_area_mean'], features['area_mean']
     lengths = ('perimeter_', 'feret_diameter_max_', 'major_axis_length_', 'minor_axis_length_', 'equivalent_diameter_area_')
-    areas = ('area_', 'bbox_area_', 'convex_hull_area') # area_ includes area_explored_total
+    areas = ('area_', 'bbox_area_', 'convex_hull_area')  # area_ includes area_explored_total
     for column in features.columns:
         if column == 'area_mean':
             continue
         if column.startswith(lengths):
-            features[column] = features[column]/diameter
+            features[column] = features[column] / diameter
         elif column.startswith(areas):
-            features[column] = features[column]/area
+            features[column] = features[column] / area
     if 'alpha' in features.columns:
         features['alpha'] = features['alpha'].where(features['alpha'] != 0)
     return features.drop(columns=['equivalent_diameter_area_mean'])
@@ -103,7 +117,7 @@ def make_model(**params):
 def search_model(X, y, param_dist, n_iter, n_jobs=1):
     '''Random search of the hyperparameters by cross-validation on (X, y), then fit of the best model on (X, y)'''
     cv = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    search = RandomizedSearchCV(estimator=make_model(), param_distributions=param_dist, scoring='balanced_accuracy', \
+    search = RandomizedSearchCV(estimator=make_model(), param_distributions=param_dist, scoring='balanced_accuracy',
                                 n_iter=n_iter, cv=cv, n_jobs=n_jobs, random_state=RANDOM_STATE)
     search.fit(X, y)
     return search
@@ -122,18 +136,26 @@ def fit_and_predict(X_train, y_train, X_test, param_dist, n_iter):
 
 
 def most_frequent_params(list_params):
-    '''The combination of hyperparameters selected the most often among the folds, as arguments of the random forest'''
+    '''
+    The combination of hyperparameters selected the most often among the folds, as arguments of the random forest.
+    Ties: the first combination in sorted order, so that the choice does not change between runs
+    '''
     keys = [str(sorted(params.items())) for params in list_params]
-    params = list_params[keys.index(max(set(keys), key=keys.count))]
+    params = list_params[keys.index(pd.Series(keys).mode()[0])]
     return {key.replace('rf__', ''): value for key, value in params.items()}
 
 
-def permutation_p_value(X, y, params, n_permutations):
+def permutation_test(X, y, params, n_permutations, n_jobs=1):
     '''
-    Permutation test: p-value of the balanced accuracy of the cross-validation, compared with the same
-    cross-validation with shuffled labels. The hyperparameters are fixed. Runs on one core.
+    Permutation test: balanced accuracy of the cross-validation, compared with the same cross-validation with
+    shuffled labels. The hyperparameters are fixed.
+    Returns the balanced accuracy, the balanced accuracies with shuffled labels and the p-value
     '''
     cv = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    _, _, p_value = permutation_test_score(make_model(**params), X, y, cv=cv, scoring='balanced_accuracy', \
-                                           n_permutations=n_permutations, n_jobs=1, random_state=RANDOM_STATE)
-    return p_value
+    return permutation_test_score(make_model(**params), X, y, cv=cv, scoring='balanced_accuracy',
+                                  n_permutations=n_permutations, n_jobs=n_jobs, random_state=RANDOM_STATE)
+
+
+def permutation_p_value(X, y, params, n_permutations):
+    '''p-value of the permutation test (see permutation_test). Runs on one core.'''
+    return permutation_test(X, y, params, n_permutations, n_jobs=1)[2]

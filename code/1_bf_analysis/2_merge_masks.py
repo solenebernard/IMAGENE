@@ -1,6 +1,5 @@
 '''
-Merge the cellpose masks of the tiles into one global mask per time frame.
-Adapted from 260918_Oslo/4_merge_masks.py
+Step 1.2: merge the cellpose masks of the tiles into one global mask per time frame.
 
 Tiles are merged sequentially in ascending tile index. When two cells overlap
 (same cell seen in two tiles), the priority rule is:
@@ -9,15 +8,24 @@ Tiles are merged sequentially in ascending tile index. When two cells overlap
   - both cropped          ->  keep the first (lower tile index)
 "Cropped" means any pixel of the cell is within BORDER_MARGIN pixels of the tile edge.
 
-Saved in ROOTPATH/EXP_PATH/Live/CONDITION/global_masks/
+Input:  ROOTPATH/EXP_PATH/Live/CONDITION/non_merged/finetune_z2/*_cp_masks.png (cellpose masks of the tiles, step M1)
+Output: ROOTPATH/EXP_PATH/Live/CONDITION/global_masks/
     - global_mask_t*.png: the global mask of each time frame (ID not tracked yet)
     - global_id_map.csv: for each cell of the global masks, its tile (s) and its ID in the tile (local_id)
+
+Run: python3 -m 1_bf_analysis.2_merge_masks
 '''
 
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
-from tools.tools_bf import *
+import numpy as np
+import os
+import pandas as pd
+from PIL import Image
+from tools.read_yaml import (
+    BORDER_MARGIN, CONDITION, EXP_PATH, LIVE_HEIGHT, LIVE_N_COLS, LIVE_N_ROWS, LIVE_N_TILES, LIVE_OVERLAP_PIXELS,
+    LIVE_TILE_SIZE, LIVE_WIDTH, N_FRAMES, ROOTPATH, Z_FINETUNE
+)
+from tools.tools_bf import compute_snake_tile_coords, load_masks_tile_cellpose
 
 
 def cropped_labels(tile, margin=3):

@@ -1,33 +1,34 @@
 # Libraries required by the pipeline. Install with: bash install.sh
-# The versions given are the ones used for the results of the paper, with Python 3.10 (and PyTorch 2.10.0, installed with cellpose)
+# The versions given are the ones used for the results of the paper, with Python 3.10
 
 # General
 numpy==1.26.4
 pandas==2.3.3
 scipy==1.12.0
-matplotlib
-seaborn
-pyyaml
-tifffile
-Pillow
-imageio
-opencv-python
+matplotlib==3.10.9
+seaborn==0.13.2
+pyyaml==6.0.3
+tifffile==2025.5.10
+Pillow==12.3.0
+imageio==2.38.0
+opencv-python==4.11.0.86
 scikit-image==0.25.2
 scikit-learn==1.7.2
 
 # Step 1 and 2: segmentation (cpsam model)
 cellpose==4.1.1
+torch==2.10.0
 
-# Step 2: detection of the spots (used through pipeline_smfish-main, see install.sh) and selection of the thresholds
+# Step 2: detection of the spots and selection of the thresholds
 big-fish==0.6.2
-streamlit
+streamlit==1.65.0
 
 # Step 4: features
 pyefd==1.7.0
-numexpr
-shapely
-powerlaw
+numexpr==2.14.1
+shapely==2.1.2
+powerlaw==2.0.0
 
 # Step 5 and 7: model and figures
 umap-learn==0.5.11
-statsmodels
+statsmodels==0.15.0

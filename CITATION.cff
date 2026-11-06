@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this code or these data, please cite the preprint below."
+title: "IMAGENE"
+type: software
+repository-code: "https://github.com/solenebernard/IMAGENE"
+authors:
+  - family-names: Bernard
+    given-names: S.
+preferred-citation:
+  type: article
+  title: "IMAGENE: Single-cell association of live cell imaging and gene expression profiles of non-adherent cells through photoactivatable adhesives"
+  journal: bioRxiv
+  year: 2026
+  doi: "10.64898/2026.01.20.700510"
+  url: "https://www.biorxiv.org/content/10.64898/2026.01.20.700510v1"
+  authors:
+    - family-names: Gariboldi
+      given-names: M. I.
+    - family-names: Sturmach
+      given-names: C.
+    - family-names: Bernard
+      given-names: S.
+    - family-names: Weber
+      given-names: C.
+    - family-names: Gourves
+      given-names: M.
+    - family-names: Umeda
+      given-names: Y.
+    - family-names: Li
+      given-names: X.
+    - family-names: Yamahira
+      given-names: S.
+    - family-names: Fernandes
+      given-names: J.
+    - family-names: Saez-Cirion
+      given-names: A.
+    - family-names: Yamaguchi
+      given-names: S.
+    - family-names: Muller
+      given-names: F.

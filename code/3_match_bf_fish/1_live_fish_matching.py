@@ -1,30 +1,39 @@
+'''
+Step 3.1: match the live cells (last time frame of the movie) with the smFISH cells.
+
+1. The smFISH mosaic mask is rescaled to the pixel size of the BF images (constants.scale). Objects smaller than
+   500 pixels, or whose centroid falls outside their mask, are removed.
+2. The translation between the two fields of view is found by brute force on the centroids of the cells
+   (matching.translation_*), with the masks of the whole cells or of the nuclei (matching.dapi_mask).
+3. Each live cell is paired with the smFISH cell that is its reciprocal closest neighbour (closer than
+   constants.max_dist). The distance to the second closest cell, on each side, is saved for the quality control of
+   the pairs in step 5.
+
+Input:  ROOTPATH/EXP_PATH/Live/CONDITION/track/tracks.csv (step 1.3)
+        ROOTPATH/EXP_PATH/Fish/masks/CONDITION/mosaic_mask_reassigned.tiff (step 2.2)
+Output: ROOTPATH/EXP_PATH/alignment/CONDITION-alignment.csv: the pairs of cells
+        ROOTPATH/EXP_PATH/alignment/CONDITION-overlay.npy: BF mask and aligned smFISH mask, on the BF field of view
+        ROOTPATH/EXP_PATH/alignment/CONDITION-matching.png: illustration of the matching
+
+Run: python3 -m 3_match_bf_fish.1_live_fish_matching
+'''
+
+
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
+import numpy as np
+import tifffile
+from PIL import Image
+from tools.read_yaml import (
+    CONDITION, DAPI_MASK, EXP_PATH, MAX_DIST_MATCHING, N_FRAMES, RATIO_QC, ROOTPATH, SCALE, TRANSLATION_DELTA,
+    TRANSLATION_DELTA_REFINED, TRANSLATION_N
+)
 from tools.tools_bf import load_tracks, load_tracked_mask
-from tools.matching import build_overlay, save_matching_illustration
+from tools.matching import build_overlay, save_matching_illustration, get_translation, match_cells
 
 import cv2
-from scipy.spatial.distance import cdist
-from matplotlib.path import Path
-
-name_exp = EXP_PATH[:-1]
-
-# Constants
-scale = SCALE
-max_dist = MAX_DIST_MATCHING # Do not pick a custom threshold: make it high, and save the distance for each matching, so we can filter after! (do not filter right now)
-
-# Do you we the DAPI mask or whole cells fish masks for alignment?
-DAPI_mask = DAPI_MASK
 
 
-# Initialize variables
-data_path_live = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/'
-data_path_raw = ROOTPATH + EXP_PATH + 'Live/' + CONDITION + '/live_dataset/' 
-video_dir = data_path_live + 'video/'
-save_path_file = ROOTPATH + EXP_PATH + "alignment/"+CONDITION+"-alignment.csv"
-
-# Create of fast version of extract_centroid_coords
+# Fast version of extract_centroid_coords
 def extract_centroid_coords(mask, unique_values=None):
     '''
     Extracts the centroid coordinates of the labeled regions in a mask
@@ -45,163 +54,16 @@ def extract_centroid_coords(mask, unique_values=None):
         unique_values = np.unique(mask_values)
     for i in unique_values:
         ind = np.where(mask_values == i)[0]
-        y,x = x_pos[ind], y_pos[ind]
+        y, x = x_pos[ind], y_pos[ind]
         # Compute centroid (= the average of the x and y coordinates)
         x_coords.append(x.mean())
         y_coords.append(y.mean())
         # Compute area
-        area=len(x)
+        area = len(x)
         areas.append(area)
     x_coords, y_coords = np.asarray(x_coords), np.asarray(y_coords)
     coords = np.stack((x_coords, y_coords))
     return unique_values, coords.T, np.asarray(areas)
-
-def compute_distance(p0, p1):
-    '''
-    For two sets of points p0 and p1
-    Compute the sum of the distances between each point of p1
-    to its closest neighbour in p0    
-    '''
-    # Troncate fish
-    # p0 = np.copy(p0)[(p0[:, 0] >= p1[:, 0].min())\
-    #                                 &(p0[:, 0] <= p1[:, 0].max())\
-    #                                 &(p0[:, 1] >= p1[:, 1].min())\
-    #                                 &(p0[:, 1] <= p1[:, 1].max())]
-    mat_dist = cdist(p0, p1)
-    arg_min_dist = np.argmin(mat_dist, axis=1)
-    min_dist = np.min(mat_dist, axis=1)
-    return(np.mean(min_dist), arg_min_dist)
-
-def match_closest_neighbour(p0, p1, max_dist, plot=True):
-
-    # Get closest neighbour
-    mat_dist = cdist(p0, p1)
-
-    # Initialize matrix of matching from p0 to p1
-    mat_match0 = np.zeros_like(mat_dist)
-    arg_min_dist0 = np.argsort(mat_dist,axis=1)[:,0]
-    mat_match0[np.arange(len(p0)),arg_min_dist0] = 1
-    # Set threshold of maximum distance of max_dist
-    min_dist0 = np.min(mat_dist, axis=1)
-    mat_match0[np.arange(len(p0))[min_dist0>max_dist],arg_min_dist0[min_dist0>max_dist]] = 0
-
-    # Initialize matrix of matching from p1 to p0
-    mat_match1 = np.zeros_like(mat_dist)
-    arg_min_dist1 = np.argsort(mat_dist,axis=0)[0]
-    mat_match1[arg_min_dist1,np.arange(len(p1))] = 1
-    # Set threshold of maximum distance of max_dist
-    min_dist1 = np.min(mat_dist, axis=0)
-    mat_match1[arg_min_dist1[min_dist1>max_dist], np.arange(len(p1))[min_dist1>max_dist]] = 0
-
-    # Total matching matrix is the multiplication of both: it's reciprocal
-    # Too conservative?
-    mat_match = mat_match0*mat_match1
-
-    # Now: second closest neighbour
-    # Initialize new matrix
-    # It's not reciprocal
-    mat_match_scd_0 = np.zeros_like(mat_match)
-    mat_match_scd_1 = np.zeros_like(mat_match)
-
-    # Each matched point of p0 and p1 is linked to its closest neighbour
-    ind_matched0 = np.where(mat_match==1)[0]
-    ind_matched1 = np.where(mat_match==1)[1]
-    
-    arg_2min_dist0 = np.argsort(mat_dist,axis=1)[:,1]
-    mat_match_scd_0[ind_matched0,arg_2min_dist0[ind_matched0]] = 2
-
-    arg_2min_dist1 = np.argsort(mat_dist,axis=0)[1]
-    mat_match_scd_1[arg_2min_dist1[ind_matched1],ind_matched1] = 2
-
-    if plot:
-        # Vizualize matching
-        plt.figure(figsize=(20,20))
-        plt.scatter(p0[:,0], p0[:,1],s=3,c='green',marker='.')
-        plt.scatter(p1[:,0], p1[:,1],s=3,c='red',marker='.')
-        ind_p0, ind_p1 = np.where(mat_match==1)
-        plt.scatter(p0[ind_p0][:,0], p0[ind_p0][:,1],s=8,c='green')
-        plt.scatter(p1[ind_p1][:,0], p1[ind_p1][:,1],s=8,c='red')
-        plt.plot([p0[ind_p0][:,0],  p1[ind_p1][:,0]], [p0[ind_p0][:,1],  p1[ind_p1][:,1]],c='blue',linewidth=0.5)
-
-        ind_p0, ind_p1 = np.where(mat_match_scd_0==2)
-        plt.plot([p0[ind_p0][:,0],  p1[ind_p1][:,0]], [p0[ind_p0][:,1],  p1[ind_p1][:,1]],c='green',linewidth=0.5,alpha=0.5, linestyle='--')
-        ind_p0, ind_p1 = np.where(mat_match_scd_1==2)
-        plt.plot([p0[ind_p0][:,0],  p1[ind_p1][:,0]], [p0[ind_p0][:,1],  p1[ind_p1][:,1]],c='red',linewidth=0.5,alpha=0.5, linestyle='--')
-        plt.show()
-
-    return(mat_dist, mat_match, mat_match_scd_0, mat_match_scd_1)
-
-
-def brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, n):
-    '''
-    Brute force: test all translations between two extreme translation for each axis
-    with a granularity n
-    '''
-    # Get all possible translation for each axis
-    dx_trans = np.linspace(dx_trans_min, dx_trans_max, n)
-    dy_trans = np.linspace(dy_trans_min, dy_trans_max, n)
-
-    error_mat = np.zeros([n, n])
-    for i, x_trans in enumerate(dx_trans):
-        for j,y_trans in enumerate(dy_trans):
-            p1_trans = p1 + np.array([x_trans, y_trans])
-
-            error, _ = compute_distance(p0, p1_trans)
-            error_mat[i, j] = error
-
-    # Get the translation that minimizes the distance
-    i,j = np.argmin(error_mat)//n, np.argmin(error_mat)%n
-    x_trans, y_trans = dx_trans[i],dy_trans[j]
-
-    return(x_trans, y_trans, error_mat)
-
-def get_translation(p0, p1, n=40, delta=1500, delta_refined=300):
-
-    p0_xmin, p0_xmax, p0_ymin, p0_ymax = p0[:,0].min(), p0[:,0].max(), \
-                p0[:,1].min(), p0[:,1].max()
-
-    p1_xmin, p1_xmax, p1_ymin, p1_ymax = p1[:,0].min(), p1[:,0].max(), \
-        p1[:,1].min(), p1[:,1].max()
-    
-    print(p0_xmin, p0_xmax, p0_ymin, p0_ymax)
-    print(p1_xmin, p1_xmax, p1_ymin, p1_ymax)
-    dx_trans_max = (p0_xmax-p0_xmin)-(p1_xmax-p1_xmin) + delta#*2/3
-    dy_trans_max = (p0_ymax-p0_ymin)-(p1_ymax-p1_ymin) + delta
-    dx_trans_min = - delta#*2/3
-    dy_trans_min = - delta
-    print(dx_trans_max, dy_trans_max)
-
-    x_trans, y_trans, error_mat = brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, n)
-    plt.imshow((error_mat.T),origin='lower')
-    plt.colorbar()
-    plt.show()
-    print(x_trans, y_trans)
-    print(np.argmin(error_mat)//n, np.argmin(error_mat)%n)
-    # Add one leval of dichotomy
-    dx_trans_max = x_trans + delta_refined
-    dy_trans_max = y_trans + delta_refined
-    dx_trans_min = x_trans - delta_refined
-    dy_trans_min = y_trans - delta_refined
-
-    x_trans, y_trans, error_mat2 = brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, n)
-    plt.imshow((error_mat2.T),origin='lower')
-    plt.colorbar()
-    plt.show()
-
-    # print(x_trans, y_trans)
-    # print(np.argmin(error_mat)//n, np.argmin(error_mat)%n)
-    # # Add one leval of dichotomy
-    # dx_trans_max = x_trans + 10
-    # dy_trans_max = y_trans + 10
-    # dx_trans_min = x_trans - 10
-    # dy_trans_min = y_trans - 10
-
-    # x_trans, y_trans, error_mat2 = brute_force(p0, p1, dx_trans_min, dy_trans_min, dx_trans_max, dy_trans_max, 10)
-    # plt.imshow((error_mat2.T),origin='lower')
-    # plt.colorbar()
-    # plt.show()
-
-    return(x_trans, y_trans, error_mat)
 
 
 def filter_segmentation(mask):
@@ -217,106 +79,82 @@ def filter_segmentation(mask):
     unique_labels = unique_labels[unique_labels > 0]
     # Compute the centroids of cells
     unique_values, centroids, areas = extract_centroid_coords(mask)
-    centroids = np.asarray(np.floor(centroids),dtype=np.int32) # Cast as an index
+    centroids = np.asarray(np.floor(centroids), dtype=np.int32)  # Cast as an index
     # If the value of the mask is 0 at the centroid position: the centroid is outside
-    values = labeled_im[centroids[:,1],centroids[:,0]]
-    id_val = np.where(values==0)[0] # If it falls outside a cell
+    values = labeled_im[centroids[:, 1], centroids[:, 0]]
+    id_val = np.where(values == 0)[0]  # If it falls outside a cell
     problematic_id = unique_labels[id_val]
-    # print(problematic_id)
 
     # Iterate over the problematic id
     # And remove the cells
     for x in problematic_id:
-        bool_x = labeled_im==x
+        bool_x = labeled_im == x
         labeled_im[bool_x] = 0
-    
+
     # Filter size with size smaller than 500
-    problematic_id = unique_values[np.where(areas<500)[0]]
+    problematic_id = unique_values[np.where(areas < 500)[0]]
     print(problematic_id)
     for x in problematic_id:
-        bool_x = labeled_im==x
+        bool_x = labeled_im == x
         labeled_im[bool_x] = 0
-    
-    return(labeled_im)
-            
 
-def compute_area(mask_pos, list_ind):
-    list_sum = []
-    for x in list_ind:
-        sum = np.sum(mask_pos==x)
-        list_sum.append(sum)
-    return(np.asarray(list_sum))
+    return (labeled_im)
 
 
-# BF cells: ID and centroid of the tracked cells at the last time frame, from the table of the tracks (step 1.3)
-tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
-tracks_last = tracks[tracks['t']==N_FRAMES-1]
-mask_values_bf = tracks_last['unique_id'].values
-centroids_bf = tracks_last[['centroid_x', 'centroid_y']].values
+def main():
+    '''Align the two fields of view and match the cells'''
+    # Constants
+    scale = SCALE
+    max_dist = MAX_DIST_MATCHING  # Do not pick a custom threshold: make it high, and save the distance for each matching, so we can filter after! (do not filter right now)
+
+    # Do you we the DAPI mask or whole cells fish masks for alignment?
+    DAPI_mask = DAPI_MASK
+
+    # Initialize variables
+    save_path_file = ROOTPATH + EXP_PATH + "alignment/" + CONDITION + "-alignment.csv"
+
+    # BF cells: ID and centroid of the tracked cells at the last time frame, from the table of the tracks (step 1.3)
+    tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
+    tracks_last = tracks[tracks['t'] == N_FRAMES - 1]
+    mask_values_bf = tracks_last['unique_id'].values
+    centroids_bf = tracks_last[['centroid_x', 'centroid_y']].values
+
+    # Fish segmentation
+    FISH_segmentation = np.asarray(tifffile.imread(ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + "/mosaic_mask_reassigned.tiff"))  # segmentation of FISH
+    # Realign according to the scaling factor
+    FISH_segmentation = cv2.resize(FISH_segmentation, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+    FISH_segmentation = filter_segmentation(FISH_segmentation)
+
+    if DAPI_mask:
+        fish_match = np.asarray(tifffile.imread(ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + "/DAPI_masks/mosaic_mask_reassigned.tiff"))
+        fish_match = cv2.resize(fish_match, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+        fish_match = filter_segmentation(fish_match)
+    else:
+        fish_match = FISH_segmentation
+
+    # Extract centroids
+    mask_values_fish, centroids_fish, areas_fish = extract_centroid_coords(FISH_segmentation)
+    mask_values_fish_match, centroids_fish_match, areas_fish_match = extract_centroid_coords(fish_match)
+
+    # Translate
+    x_trans, y_trans, error_mat = get_translation(centroids_fish_match, centroids_bf, n=TRANSLATION_N, delta=TRANSLATION_DELTA, delta_refined=TRANSLATION_DELTA_REFINED)
+    print(f'Translation: {x_trans:.1f}, {y_trans:.1f}')
+    centroids_bf = centroids_bf + np.array([x_trans, y_trans])
+
+    # Match with closest neighbour, and save the table of the pairs
+    save_frame = match_cells(mask_values_fish, centroids_fish, mask_values_bf, centroids_bf, max_dist)
+    save_frame.to_csv(save_path_file, index=False)
+
+    # SAVE THE OVERLAY: on the whole BF field of view
+    # First channel: BF mask of the last time frame with the track ID. Second channel: FISH mask, placed with the alignment
+    Image.MAX_IMAGE_PIXELS = 2000000000
+    bf_segmentation = load_tracked_mask(ROOTPATH, EXP_PATH, CONDITION, N_FRAMES - 1, tracks)
+    overlay_save = build_overlay(bf_segmentation, FISH_segmentation, x_trans, y_trans)
+    np.save(ROOTPATH + EXP_PATH + "alignment/" + CONDITION + '-overlay.npy', overlay_save)
+
+    # ILLUSTRATION: global alignment and pairs kept after the quality control
+    save_matching_illustration(overlay_save, save_frame, RATIO_QC, ROOTPATH + EXP_PATH + "alignment/" + CONDITION + '-matching.png', title=CONDITION)
 
 
-# Fish segmentation
-FISH_segmentation = np.asarray(tifffile.imread(ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + "/mosaic_mask_reassigned.tiff")) # segmentation of FISH
-# Realign according to the scaling factor
-FISH_segmentation = cv2.resize(FISH_segmentation, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
-FISH_segmentation = filter_segmentation(FISH_segmentation)
-
-if DAPI_mask:
-    fish_match = np.asarray(tifffile.imread(ROOTPATH + EXP_PATH + 'Fish/masks/' + CONDITION + "/DAPI_masks/mosaic_mask_reassigned.tiff")) 
-    fish_match = cv2.resize(fish_match, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
-    fish_match = filter_segmentation(fish_match)
-else:
-    fish_match = FISH_segmentation
-# img = img.transpose(Image.ROTATE_270)
-
-
-# Extract centroids
-mask_values_fish, centroids_fish, areas_fish = extract_centroid_coords(FISH_segmentation)
-mask_values_fish_match, centroids_fish_match, areas_fish_match = extract_centroid_coords(fish_match)
-
-# Translate 
-x_trans, y_trans, error_mat = get_translation(centroids_fish_match, centroids_bf, n=TRANSLATION_N, delta=TRANSLATION_DELTA, delta_refined=TRANSLATION_DELTA_REFINED)
-centroids_bf = centroids_bf + np.array([x_trans, y_trans])
-
-# Match with closest neighbour
-mat_dist, mat_match, mat_match_scd_fish, mat_match_scd_bf = match_closest_neighbour(centroids_fish, centroids_bf, max_dist)
-
-# Closest neighbour
-ind_p0, ind_p1 = np.where(mat_match==1)
-matched_fish_id, matched_bf_id = mask_values_fish[ind_p0], mask_values_bf[ind_p1]
-matched_dist = mat_dist[ind_p0, ind_p1]
-matched_fish_centroid, matched_bf_centroid = centroids_fish[ind_p0], centroids_bf[ind_p1]
-
-# Second closest neigbour from p0 to p1
-ind2_p1 = np.asarray([np.where(mat_match_scd_fish[x]==2)[0][0] for x in ind_p0]) # keep the order 
-matched_bf_id_scd = mask_values_bf[ind2_p1]
-matched_dist_2_fish = mat_dist[ind_p0, ind2_p1]
-
-# Second closest neigbour from p1 to p0 # PROBLEM
-ind2_p0 = np.asarray([np.where(mat_match_scd_bf[:,x]==2)[0][0] for x in ind_p1]) # keep the order 
-matched_fish_id_scd = mask_values_fish[ind2_p0]
-matched_dist_2_bf = mat_dist[ind2_p0, ind_p1]
-
-
-area_fish = compute_area(FISH_segmentation[FISH_segmentation>0], matched_fish_id)
-
-
-# Save dictionnary in csv
-save_frame = pd.DataFrame({"BF":matched_bf_id, "Fish":matched_fish_id, \
-                        "BF_center_x":matched_bf_centroid[:,0], "BF_center_y":matched_bf_centroid[:,1], \
-                        "Fish_center_x":matched_fish_centroid[:,0], "Fish_center_y":matched_fish_centroid[:,1], \
-                        "Distance":matched_dist, \
-                        'Distance_2nd_bf_to_fish': matched_dist_2_bf, 'Distance_2nd_fish_to_bf': matched_dist_2_fish, \
-                        'Id_2nd_bf_to_fish': matched_fish_id_scd, 'Id_2nd_fish_to_bf': matched_bf_id_scd})
-save_frame.to_csv(save_path_file, index=False)
-
-
-# SAVE THE OVERLAY: on the whole BF field of view
-# First channel: BF mask of the last time frame with the track ID. Second channel: FISH mask, placed with the alignment
-Image.MAX_IMAGE_PIXELS = 2000000000
-bf_segmentation = load_tracked_mask(ROOTPATH, EXP_PATH, CONDITION, N_FRAMES-1, tracks)
-overlay_save = build_overlay(bf_segmentation, FISH_segmentation, x_trans, y_trans)
-np.save(ROOTPATH + EXP_PATH + "alignment/"+CONDITION+ '-overlay.npy', overlay_save)
-
-# ILLUSTRATION: global alignment and pairs kept after the quality control
-save_matching_illustration(overlay_save, save_frame, RATIO_QC, ROOTPATH + EXP_PATH + "alignment/"+CONDITION+ '-matching.png', title=CONDITION)
+if __name__ == "__main__":
+    main()

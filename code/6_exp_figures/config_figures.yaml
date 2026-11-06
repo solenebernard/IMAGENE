@@ -1,0 +1,16 @@
+# Parameters of the figures (6_exp_figures/). The paths and the parameters of the pipeline are in config.yaml
+
+# Data
+exp_path_gene_profile: null # The name of the experiment in exp/results/all_gene_profile.csv. null: experiment.exp_path of config.yaml
+condition: '3-24H' # The default condition of the figures
+condition_control: '1-NA' # The non-activated condition
+conditions_activated: ['3-24H', '4-24H'] # The activated conditions
+data_dir: 'exp/' # From rootpath: the folder with thumbnails/, the images of the cells of 2_umap. null: they are read from the single-cell movies of step 1.4 (rootpath and exp_path of config.yaml)
+output_dir: 'exp/results/figures/' # Where the figures are saved (from rootpath)
+
+# 3_contours_trajectories_grid
+contours_trajectories:
+  n_cells_gene: 30 # The number of cells with low and high expression of a gene
+  contour_limit: null # Half width of the panels of the contours, in pixels. null: all the contours fit in the panels
+  trajectory_limit: null # Same for the trajectories
+  grid_genes: ['CORO1A', 'GZMB', 'TNF'] # 3_contours_trajectories_grid: one row per gene

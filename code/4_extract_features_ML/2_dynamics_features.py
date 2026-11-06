@@ -1,87 +1,97 @@
+'''
+Step 4.2: motility and neighbourhood features of each live cell, from the table of the tracks (step 1.3).
+
+Saved in ROOTPATH/EXP_PATH/live_cell_features/:
+    - dynamics_feats_CONDITION.csv: exponent alpha (and its standard error) of the log-log fit of the time-averaged
+      displacement against the lag, for lags 1 to features.msd_n_max - 1 (tracks longer than features.msd_n_max)
+    - neighbors_feats_CONDITION.csv, at each time frame: area of the Voronoi cell of the cell and distance from its
+      centroid to the boundary of its Voronoi cell (cells larger than live.min_cell_area; missing for the cells at
+      the border of the diagram), and number of cells within each distance of features.neighbors_thresholds
+
+Run: python3 -m 4_extract_features_ML.2_dynamics_features
+'''
+
+
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
-from tools.tools_bf import *
+import numpy as np
+import pandas as pd
+from tools.read_yaml import (
+    CONDITION, EXP_PATH, LIVE_HEIGHT, LIVE_WIDTH, MIN_CELL_AREA, MSD_N_MAX, N_FRAMES, NEIGHBORS_THRESHOLDS, ROOTPATH
+)
+from tools.tools_bf import load_tracks
 
 from scipy.stats import linregress
-from scipy.spatial import KDTree, distance
-from skimage.measure import regionprops_table
-from scipy.spatial import Voronoi, voronoi_plot_2d
+from scipy.spatial import distance
+from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point, LinearRing, box
-from shapely.ops import clip_by_rect
-from shapely.ops import nearest_points
-import powerlaw
+
+
+n_t = N_FRAMES
+bbox = [0, LIVE_HEIGHT, LIVE_WIDTH, 0]
 
 
 def TMSD(traj, dn):
     a0 = traj[:-dn]
     a1 = traj[dn:]
-    dist = np.linalg.norm(a1-a0,axis=-1)
-    # print(len(dist))
-    return(np.mean(dist))
+    dist = np.linalg.norm(a1 - a0, axis=-1)
+    return (np.mean(dist))
+
 
 def TMSD_curve(traj, nmax=20):
-    tau = np.arange(1,nmax)
+    tau = np.arange(1, nmax)
     a = np.array([TMSD(traj, dn) for dn in tau])
-    return(tau, a)
+    return (tau, a)
+
 
 def fit_powerlaw(log_tau, log_msd):
     # Fit log-log MSD
     slope, intercept, r_value, p_value, std_err = linregress(log_tau, log_msd)
-    return(slope, std_err)
+    return (slope, std_err)
 
 
 def voronoi_finite_polygons(vor, labels, bbox):
     """Return finite polygons clipped to a bounding box."""
     polygons_dict = {}
     for i, region_index in enumerate(vor.point_region[:]):
-        cell_bf = labels[i] # region_index value goes from 1 to max+1
-        region = vor.regions[region_index] 
+        cell_bf = labels[i]  # region_index value goes from 1 to max+1
+        region = vor.regions[region_index]
         if -1 in region or len(region) == 0:
             # infinite region → create a big polygon then clip
             continue
         poly = Polygon(vor.vertices[region])
         clipped = poly.intersection(box(*bbox))
-        
+
         # Get distance to closest boundary
         pol_ext = LinearRing(clipped.exterior.coords)
         point = Point(vor.points[i])
         d = pol_ext.project(point)
         p = pol_ext.interpolate(d)
         closest_point_coords = np.asarray(p.coords)[0]
-        di = np.linalg.norm(closest_point_coords-np.asarray(point.coords.xy).flatten())
-        
-        polygons_dict[cell_bf] = {'vor_area':clipped.area, 'distance_boundary':di}
-         
-        # p1, p2 = nearest_points(clipped, Point(vor.points[i]))
-        # x,y = clipped.exterior.coords.xy
-        # fig, ax = plt.subplots(1,1,figsize=(10,10))
-        # ax.plot(x,y)
-        # plt.scatter(point.coords.xy[0],point.coords.xy[1])
-        # ax.scatter(closest_point_coords[0], closest_point_coords[1])
-        # ax.set_aspect('equal')
-        # plt.show()
+        di = np.linalg.norm(closest_point_coords - np.asarray(point.coords.xy).flatten())
+
+        polygons_dict[cell_bf] = {'vor_area': clipped.area, 'distance_boundary': di}
     return polygons_dict
+
 
 def create_df_traj(df_cells_all):
     # Generate metrics for dynamics
     unique_id = np.unique(np.asarray([x[0] for x in df_cells_all.index]))
     dict_traj = {}
     for id_cell in unique_id:
-        traj = np.asarray(df_cells_all.loc[id_cell,['centroid-0', 'centroid-1']])
-        if len(traj)>MSD_N_MAX:
-            tau, msd = TMSD_curve(traj, nmax=MSD_N_MAX) 
+        traj = np.asarray(df_cells_all.loc[id_cell, ['centroid-0', 'centroid-1']])
+        if len(traj) > MSD_N_MAX:
+            tau, msd = TMSD_curve(traj, nmax=MSD_N_MAX)
             # Fit log-log MSD
             log_tau, log_msd = np.log10(tau), np.log10(msd)
             slope, std_err = fit_powerlaw(log_tau, log_msd)
         else:
-            slope, std_err= None, None
-        
-        dict_traj[id_cell] = {'alpha': slope, \
-                'std_err': std_err}   
+            slope, std_err = None, None
+
+        dict_traj[id_cell] = {'alpha': slope,
+                              'std_err': std_err}
     df = pd.DataFrame(dict_traj).T
     df.index.name = 'cell_bf'
-    return(df)
+    return (df)
 
 
 def create_df_vor_area(df_cells_all):
@@ -89,8 +99,8 @@ def create_df_vor_area(df_cells_all):
     # For each t frame
     for t in range(n_t):
         points = df_cells_all.loc[:, t, :]
-        points = points[points['area']>MIN_CELL_AREA] # filter the error
-        vor = Voronoi(points[['centroid-0','centroid-1']])
+        points = points[points['area'] > MIN_CELL_AREA]  # filter the error
+        vor = Voronoi(points[['centroid-0', 'centroid-1']])
         list_bf_id = np.asarray(points.index)
         # compute voronoi area
         vor_areas = voronoi_finite_polygons(vor, list_bf_id, bbox)
@@ -98,9 +108,10 @@ def create_df_vor_area(df_cells_all):
         df_vor_areas = pd.DataFrame(vor_areas).T
         df_vor_areas.index.name = 'cell_bf'
         df_vor_areas['t'] = t
-        df_vor_areas_all = pd.concat((df_vor_areas_all,df_vor_areas))
+        df_vor_areas_all = pd.concat((df_vor_areas_all, df_vor_areas))
     df_vor_areas_all.set_index(['t'], inplace=True, append=True)
-    return(df_vor_areas_all)
+    return (df_vor_areas_all)
+
 
 def create_df_k_neighbors(df_cells_all):
     # For each t frame
@@ -112,25 +123,29 @@ def create_df_k_neighbors(df_cells_all):
         d = distance.cdist(pi, pi)
         list_thresh = NEIGHBORS_THRESHOLDS
         for thresh in list_thresh:
-            n_d = np.array([np.sum(x<thresh)-1 for x in d]) # count number of neighbors closer than threshold
+            n_d = np.array([np.sum(x < thresh) - 1 for x in d])  # count number of neighbors closer than threshold
             df[f'n_neigh_thresh_{thresh}'] = n_d
-        df['t']=t
+        df['t'] = t
         df_all = pd.concat((df_all, df))
     df_all.set_index('t', append=True, inplace=True)
-    return(df_all)
+    return (df_all)
 
 
-# Centroid and area of each tracked cell at each time frame, from the table of the tracks (step 1.3)
-tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
-df_cells_all = tracks.rename(columns={'unique_id':'cell_bf', 'centroid_y':'centroid-0', 'centroid_x':'centroid-1'})
-df_cells_all = df_cells_all.set_index(['cell_bf', 't'])[['area', 'centroid-0', 'centroid-1']].sort_index()
-n_t = N_FRAMES
-bbox = [0, LIVE_HEIGHT, LIVE_WIDTH, 0]
+def main():
+    '''Compute and save the motility and neighbourhood features'''
+    # Centroid and area of each tracked cell at each time frame, from the table of the tracks (step 1.3)
+    tracks = load_tracks(ROOTPATH, EXP_PATH, CONDITION)
+    df_cells_all = tracks.rename(columns={'unique_id': 'cell_bf', 'centroid_y': 'centroid-0', 'centroid_x': 'centroid-1'})
+    df_cells_all = df_cells_all.set_index(['cell_bf', 't'])[['area', 'centroid-0', 'centroid-1']].sort_index()
 
-df_traj = create_df_traj(df_cells_all)
-df_vor_area = create_df_vor_area(df_cells_all)
-df_k_neigh = create_df_k_neighbors(df_cells_all)
+    df_traj = create_df_traj(df_cells_all)
+    df_vor_area = create_df_vor_area(df_cells_all)
+    df_k_neigh = create_df_k_neighbors(df_cells_all)
 
-df = df_cells_all.join(df_vor_area).join(df_k_neigh)
-df.to_csv(ROOTPATH + EXP_PATH + 'live_cell_features/neighbors_feats_'+CONDITION+'.csv')
-df_traj.to_csv(ROOTPATH + EXP_PATH + 'live_cell_features/dynamics_feats_'+CONDITION+'.csv')
+    df = df_cells_all.join(df_vor_area).join(df_k_neigh)
+    df.to_csv(ROOTPATH + EXP_PATH + 'live_cell_features/neighbors_feats_' + CONDITION + '.csv')
+    df_traj.to_csv(ROOTPATH + EXP_PATH + 'live_cell_features/dynamics_feats_' + CONDITION + '.csv')
+
+
+if __name__ == "__main__":
+    main()

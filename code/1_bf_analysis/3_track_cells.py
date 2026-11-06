@@ -1,26 +1,30 @@
 '''
-Track the cells across the time frames, from the global masks of 2_merge_masks.
-Adapted from track_timelapse.py
+Step 1.3: track the cells across the time frames, from the global masks of step 1.2.
 
 Consecutive frames are matched with the Hungarian algorithm (optimal one-to-one assignment).
 The cost is the IoU where the masks overlap, and the distance between centroids where they do not.
-A cell that is not linked starts a new track.
+A cell that is not linked starts a new track. Tracks present in fewer than live.min_frames frames are removed.
 
-Saved in ROOTPATH/EXP_PATH/Live/CONDITION/track/tracks.csv, one row per track and time frame:
+Input:  ROOTPATH/EXP_PATH/Live/CONDITION/global_masks/global_mask_t*.png
+Output: ROOTPATH/EXP_PATH/Live/CONDITION/track/tracks.csv, one row per track and time frame:
     - unique_id: ID of the track
     - t: time frame
     - global_id: ID of the cell in the global mask of this time frame
     - centroid_x, centroid_y: centroid of the cell in the global mask (x: column, y: row)
     - area: number of pixels of the cell
 The masks are not saved again: the mask of a track at the time frame t is the cell global_id of the global mask.
+
+Run: python3 -m 1_bf_analysis.3_track_cells
 '''
 
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
-from tools.tools_bf import *
+import numpy as np
+import os
+import pandas as pd
+from PIL import Image
+from tools.read_yaml import CONDITION, EXP_PATH, IOU_THRESHOLD, MAX_CENTROID_DISTANCE, MIN_FRAMES, N_FRAMES, ROOTPATH
+from tools.tools_bf import load_global_mask
 
-from collections import defaultdict
 from skimage.measure import regionprops
 from scipy.optimize import linear_sum_assignment
 
@@ -134,12 +138,12 @@ def main(rootpath, exp_path, condition):
     frame_masks = [load_global_mask(rootpath, exp_path, condition, t) for t in range(N_FRAMES)]
     props = [frame_props(m) for m in frame_masks]
 
-    id_map = link_across_time(frame_masks, props, iou_threshold=IOU_THRESHOLD, \
+    id_map = link_across_time(frame_masks, props, iou_threshold=IOU_THRESHOLD,
                               max_centroid_distance=MAX_CENTROID_DISTANCE)
 
     # One row per track and time frame
-    rows = [{'unique_id': unique_id, 't': t, 'global_id': global_id, \
-             'centroid_x': props[t][global_id][1], 'centroid_y': props[t][global_id][0], \
+    rows = [{'unique_id': unique_id, 't': t, 'global_id': global_id,
+             'centroid_x': props[t][global_id][1], 'centroid_y': props[t][global_id][0],
              'area': props[t][global_id][2]} for (t, global_id), unique_id in id_map.items()]
     tracks = pd.DataFrame(rows).sort_values(['unique_id', 't'])
 

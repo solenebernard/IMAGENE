@@ -1,116 +1,65 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import pathlib
-from PIL import Image
-import tifffile
-from skimage.measure import regionprops, label
+'''
+Step 2.2: merge the cellpose masks of the smFISH tiles into one mosaic, with a unique ID for each cell.
+
+The tiles are placed following the snake pattern of the microscope: ROOTPATH/EXP_PATH/Fish/pattern_snake/CONDITION.npy
+if it exists, else fish.default_pattern (5x5). The ID of a cell of the tile s becomes 1000*s + its ID in the tile.
+The cells touching the border of their tile are removed, and where two tiles overlap, the first tile placed has
+the priority.
+
+Input:  ROOTPATH/EXP_PATH/Fish/masks/CONDITION/*_s{s}_*.png (cellpose masks of step M3; empty if a tile is missing)
+Output: ROOTPATH/EXP_PATH/Fish/masks/CONDITION/mosaic_mask_reassigned.tiff: the mosaic
+        ROOTPATH/EXP_PATH/Fish/masks/CONDITION/mosaic_mask_reassigned_s{s}.tiff: each tile, as placed in the mosaic
+
+Run: python3 -m 2_fish_analysis.2_cell_reassignment
+'''
+
 
 # Import local tools
-from tools.read_yaml import *
-from tools.imports import *
-
-OVERLAP = FISH_OVERLAP
-IM_SIZE = FISH_TILE_SIZE
-
-
-'''
-This code is for merge all the individual segmentations of FISH tiles
-And changes the ID to have a unique ID for each fish mask
-The snake pattern done by the microscope is by default 5x5
-But it can change, the pattern is stored in EXP_PATH/Fish/pattern_snake/CONDITION.npy
-'''
-
-pattern_snake_path = ROOTPATH + EXP_PATH + "Fish/pattern_snake/" + CONDITION + ".npy"
-if pathlib.Path(pattern_snake_path).exists():
-    pattern_snake = np.load(pattern_snake_path, allow_pickle = True)
-else: # the default one: 5x5
-    pattern_snake = np.load(FISH_DEFAULT_PATTERN)
-folder_mask = ROOTPATH + EXP_PATH + "Fish/masks/"+ CONDITION +"/"
-
-masks = []
-
-# Merge all the segmentation
-# + change the ID
-# two first number from 00 to 24
-# Three last numbers: from 000 to 999
-
-# Loop through the tiles
-n_tiles =int(np.max(pattern_snake[pattern_snake!=None])+1)
-for s in range(n_tiles):
-    s_ = str(s).zfill(2)
-    mask_name = '*_s{}_*.png'.format(s_)
-    try:
-        mask_path = list(pathlib.Path(folder_mask).glob(mask_name))[0]
-        mask = np.asarray(Image.open(mask_path))
-    except:
-        mask=np.zeros((IM_SIZE,IM_SIZE))
-    masks.append(mask)
+import numpy as np
+import pathlib
+import tifffile
+from PIL import Image
+from tools.read_yaml import CONDITION, EXP_PATH, FISH_DEFAULT_PATTERN, FISH_OVERLAP, FISH_TILE_SIZE, ROOTPATH
+from tools.tools_fish import load_snake_pattern, merge_snake_tiles
 
 
-def remove_cell_border(im):
-    # Look where are the cells
-    x,y = np.where(im>0)
-    # Get the index of the cells
-    values_pos = im[im>0]
-    # Get the shape of the image
-    X_shape, Y_shape = im.shape[0]-1, im.shape[1]-1
-    # Check if there are cells at the border of the image
-    bool_pos_lim = np.any(((x==0),(y==0),(x==X_shape),(y==Y_shape)),axis=0)
-    # Get which index of cells are at the border
-    ind_lim = values_pos[bool_pos_lim]
-    # Remove the cells with those indices
-    bool_im = np.any(np.asarray([im==i for i in ind_lim]),axis=0)
-    im[bool_im]=0
-    return(im)
+def main():
+    '''Build and save the mosaic of the masks'''
+    OVERLAP = FISH_OVERLAP
+    IM_SIZE = FISH_TILE_SIZE
+
+    pattern_snake = load_snake_pattern(ROOTPATH, EXP_PATH, CONDITION, FISH_DEFAULT_PATTERN)
+    folder_mask = ROOTPATH + EXP_PATH + "Fish/masks/" + CONDITION + "/"
+
+    masks = []
+
+    # Merge all the segmentation
+    # + change the ID
+    # two first number from 00 to 24
+    # Three last numbers: from 000 to 999
+
+    # Loop through the tiles
+    n_tiles = int(np.max(pattern_snake[pattern_snake != None]) + 1)
+    for s in range(n_tiles):
+        s_ = str(s).zfill(2)
+        mask_name = '*_s{}_*.png'.format(s_)
+        try:
+            mask_path = list(pathlib.Path(folder_mask).glob(mask_name))[0]
+            mask = np.asarray(Image.open(mask_path))
+        except IndexError:  # no mask for this tile: empty tile
+            mask = np.zeros((IM_SIZE, IM_SIZE))
+        masks.append(mask)
+
+    # Mosaic: the cells touching the border of their tile are removed, and the first tile has the priority where two tiles overlap
+    total_image, placed_tiles = merge_snake_tiles(masks, pattern_snake, IM_SIZE, OVERLAP, remove_border=True)
+
+    # Save the submask of each tile, as placed in the mosaic
+    for s, im in placed_tiles.items():
+        s_ = str(s).zfill(2)
+        tifffile.imwrite(folder_mask + 'mosaic_mask_reassigned_s{}.tiff'.format(s_), im.astype(np.int16))
+
+    tifffile.imwrite(folder_mask + 'mosaic_mask_reassigned.tiff', total_image.astype(np.int16))
 
 
-# Manually
-n_rows, n_cols = pattern_snake.shape
-total_image = np.zeros((IM_SIZE*n_rows-(n_rows-1)*OVERLAP, \
-                        IM_SIZE*n_cols-(n_cols-1)*OVERLAP))
-X_shape, Y_shape = total_image.shape[0], total_image.shape[1]
-
-# Do the snake
-for i in range(n_rows):
-    
-    for j in range(n_cols):
-        
-        id_tile = pattern_snake[i,j]
-        
-        if id_tile is not None:
-            im = np.copy(masks[id_tile])
-            # im = label(im)
-            im[im>0] = im[im>0] + 1000*id_tile
-            im = remove_cell_border(im)
-            
-            if i==0:
-                xmin, xmax = 0,IM_SIZE
-            else:
-                xmin, xmax = i*IM_SIZE-(i)*OVERLAP, IM_SIZE*(i+1)-i*OVERLAP
-
-            # Go from left to right
-            if j==0:
-                ymin, ymax = 0, IM_SIZE
-            else:
-                ymin, ymax = j*IM_SIZE-(j)*OVERLAP, IM_SIZE*(j+1)-j*OVERLAP
-            
-            # Fix where the two indices overlay
-            overlap = (total_image[xmin:xmax, ymin:ymax]>0)&(im>0) # get the mask for overlay
-            index_overlap_1 = np.unique(im[overlap]) # get indices in the first image
-
-            # Priority to the first image: erase indices in the second image
-            for x in index_overlap_1:
-                im[im==x] = 0
-            
-            print(xmin,xmax, ymin,ymax, i,j,id_tile)
-
-            # Save the submask
-            s = id_tile
-            s_ = str(s).zfill(2)
-            tifffile.imwrite(folder_mask + 'mosaic_mask_reassigned_s{}.tiff'.format(s_), im.astype(np.int16))
-            
-            # Add 
-            total_image[xmin:xmax, ymin:ymax] += im           
-
-
-tifffile.imwrite(folder_mask + 'mosaic_mask_reassigned.tiff', total_image.astype(np.int16))
+if __name__ == "__main__":
+    main()

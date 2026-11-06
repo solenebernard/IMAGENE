@@ -1,6 +1,14 @@
+'''
+Parameters of the analysis, read from config.yaml (or from config_confidential.yaml if this copy exists) and exposed
+as constants (ROOTPATH, EXP_PATH, CONDITION, N_FRAMES, ...). Imported by the scripts by name, e.g. `from tools.read_yaml import EXP_PATH, CONDITION`.
+
+The condition can be set from the shell
+(CONDITION=4-24H python3 -m ...), and any parameter can be replaced for one run without changing the file:
+CONFIG_SET="section.parameter=value section.parameter=value" python3 -m ...
+'''
+
 import yaml
-import socket
-import numpy as np
+from fractions import Fraction
 
 # Load config: config_confidential.yaml (own paths, not tracked by git) if it exists, else config.yaml
 import os
@@ -8,27 +16,27 @@ CONFIG_PATH = "config_confidential.yaml" if os.path.exists("config_confidential.
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 
-# Identify the environment
-hostname = socket.gethostname()
-print(hostname)
+# Parameters replaced from the shell for one run, without changing the file (used by run_control.sh):
+# CONFIG_SET="live.n_frames=1 live.n_rows=8" python3 -m ...  (section.parameter=value, separated by spaces)
+for item in os.environ.get("CONFIG_SET", "").split():
+    names, value = item.split("=", 1)
+    section, name = names.split(".")
+    config[section][name] = yaml.safe_load(value)
 
-if "maestro" in hostname:  # Adjust this for your cluster
-    env = "cluster"
-else:
-    env = "local"
-
-# Environment depending on which computer
-ROOTPATH = config[env]["rootpath"]
-MODEL_FINETUNE_PATH = config[env]['model_finetune_path']
+# Paths
+ROOTPATH = config["paths"]["rootpath"]
+MODEL_FINETUNE_PATH = config["paths"]['model_finetune_path']
 
 # Constants
-SCALE = float(eval(config["constants"]["scale"]))
+SCALE = float(Fraction(str(config["constants"]["scale"])))
+PIXEL_SIZE = config["constants"]["pixel_size_um"]  # µm per pixel of the BF images
 MAX_DIST_MATCHING = config["constants"]["max_dist"]
 SIZE_RADIUS = config["constants"]["size_radius"]
 
 # Experiment parameters
 EXP_PATH = config["experiment"]["exp_path"]
-CONDITION = config["experiment"]["condition"]
+# The condition can be set from the shell (CONDITION=4-24H python3 -m ...), as run.sh does for each condition
+CONDITION = os.environ.get("CONDITION") or config["experiment"]["condition"]
 GENES = config["experiment"]["genes"]
 ROUNDS = config["experiment"]["rounds"]
 
@@ -36,13 +44,13 @@ ROUNDS = config["experiment"]["rounds"]
 N_FRAMES = config["live"]["n_frames"]
 LIVE_N_ROWS = config["live"]["n_rows"]
 LIVE_N_COLS = config["live"]["n_cols"]
-LIVE_N_TILES = LIVE_N_ROWS*LIVE_N_COLS
+LIVE_N_TILES = LIVE_N_ROWS * LIVE_N_COLS
 LIVE_TILE_SIZE = config["live"]["tile_size"]
 LIVE_OVERLAP = config["live"]["overlap"]
-LIVE_OVERLAP_PIXELS = int(LIVE_TILE_SIZE*LIVE_OVERLAP)
+LIVE_OVERLAP_PIXELS = int(LIVE_TILE_SIZE * LIVE_OVERLAP)
 # Size of the merged image
-LIVE_HEIGHT = (LIVE_TILE_SIZE-LIVE_OVERLAP_PIXELS)*(LIVE_N_ROWS-1) + LIVE_TILE_SIZE
-LIVE_WIDTH = (LIVE_TILE_SIZE-LIVE_OVERLAP_PIXELS)*(LIVE_N_COLS-1) + LIVE_TILE_SIZE
+LIVE_HEIGHT = (LIVE_TILE_SIZE - LIVE_OVERLAP_PIXELS) * (LIVE_N_ROWS - 1) + LIVE_TILE_SIZE
+LIVE_WIDTH = (LIVE_TILE_SIZE - LIVE_OVERLAP_PIXELS) * (LIVE_N_COLS - 1) + LIVE_TILE_SIZE
 Z_FINETUNE = config["live"]["z_finetune"]
 BORDER_MARGIN = config["live"]["border_margin"]
 IOU_THRESHOLD = config["live"]["iou_threshold"]
@@ -93,3 +101,8 @@ RANDOM_STATE = config["learning"]["random_state"]
 MIN_MEAN_RNA = config["learning"].get("min_mean_rna", 3)
 N_JOBS = config["learning"].get("n_jobs", -1)
 PARAM_DIST = config["learning"]["param_dist"]
+# Folder of the tables of step 5 (and of the figures of steps 5.4 and 5.6)
+RESULTS_PATH = ROOTPATH + config["learning"]["results_path"]
+# Folder of the control experiment
+CONTROL_PATH = ROOTPATH + config["control"]["exp_path"] if "control" in config else None
+CONTROL_RATIO_QC = config["control"]["ratio_qc"] if "control" in config else None

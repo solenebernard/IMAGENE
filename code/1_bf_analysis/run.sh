@@ -35,5 +35,6 @@ python3 -m 1_bf_analysis.2_merge_masks
 ### 1.3 ### Track the cells across the time frames
 python3 -m 1_bf_analysis.3_track_cells
 
+# Optional
 ### 1.4 ### Create the videos of individual cells
-python3 -m 1_bf_analysis.4_create_live_dataset
+# python3 -m 1_bf_analysis.4_create_live_dataset
