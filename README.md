@@ -1,6 +1,12 @@
+
+
+
+
 # IMAGENE
 
 Code and data accompanying the IMAGENE study: predicting the gene expression of single T cells from their behaviour in label-free live imaging.
+
+https://github.com/user-attachments/assets/246bf983-aec8-4e2e-9442-9fccf3b8a0b1
 
 [▶ Watch the demo (25 s)](demo.mp4): one field of view through the method. The live cells are filmed in brightfield and tracked, with one contour per cell. They are then immobilised and fixed, and imaged again: DAPI staining of the nuclei, then smFISH of each gene (here, the projection of the ACTB channel). Finally, each live cell is matched to its fixed counterpart, which gives for each cell both its behaviour in the movie and its gene expression.
 
